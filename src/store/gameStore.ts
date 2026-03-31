@@ -1,78 +1,265 @@
 
 import { create } from 'zustand';
-import { GameState, GameStatus, ObstacleData, GameTheme, ProjectileData, PowerUpData } from '../types';
+import { GameState, GameStatus, ObstacleData, GameTheme, ProjectileData, PowerUpData, Modifier, ModifierChoice } from '../types';
+import { playPowerUp, playShield, playGameOver } from '../audio/sfx';
+
+const STORAGE_KEY = 'neon_runner_save';
+
+function loadSave() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch { /* ignore */ }
+  return { highScore: 0, lastRunChoices: [] };
+}
+
+function saveHighScore(score: number) {
+  try {
+    const data = loadSave();
+    data.highScore = Math.max(data.highScore, score);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  } catch { /* ignore */ }
+}
+
+function saveRunChoices(choices: ModifierChoice[]) {
+  try {
+    const data = loadSave();
+    data.lastRunChoices = choices;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  } catch { /* ignore */ }
+}
+
+const saved = loadSave();
+
+let countdownTimer: number | null = null;
+let modifierTimerInterval: number | null = null;
+let selectionTimerInterval: number | null = null;
+let applyCountdownTimer: number | null = null;
+
+export const MODIFIERS: Modifier[] = [
+  { id: 'nada', name: 'Nada', description: 'Sin efecto', multiplier: 1, color: '#888888', duration: 5, difficulty: 0 },
+  { id: 'invisible', name: 'Nave invisible', description: 'Tu nave no se ve, la hitbox sigue igual', multiplier: 3, color: '#7700e6', duration: 13, difficulty: 9 },
+  { id: 'blinking', name: 'Obstáculos parpadeantes', description: 'Obstáculos alternan visibilidad cada 1s', multiplier: 3, color: '#00cc66', duration: 13, difficulty: 8 },
+  { id: 'controls_inverted', name: 'Controles invertidos', description: 'Izquierda y derecha intercambiados', multiplier: 2, color: '#cc5200', duration: 15, difficulty: 7 },
+  { id: 'screen_inverted', name: 'Pantalla invertida', description: 'Pantalla girada 180 grados', multiplier: 2, color: '#d936d9', duration: 15, difficulty: 7 },
+  { id: 'double_tap', name: 'Doble tap', description: 'Pulsa la dirección 2 veces para moverte', multiplier: 2, color: '#ccaa00', duration: 15, difficulty: 6 },
+  { id: 'delay_input', name: 'Controles con delay', description: 'Inputs ejecutados 400ms después', multiplier: 2, color: '#0099cc', duration: 15, difficulty: 6 },
+  { id: 'speed_boost', name: 'Velocidad aumentada', description: 'Obstáculos al doble de velocidad', multiplier: 2, color: '#cc0000', duration: 15, difficulty: 5 },
+  { id: 'no_lane_lines', name: 'Sin carriles', description: 'Las líneas de carril desaparecen, x2 puntos', multiplier: 2, color: '#00ccaa', duration: 17, difficulty: 3 },
+];
+
+let recentModifierIds: string[] = [];
+
+function pickModifiersForScore(score: number): Modifier[] {
+  const nada = MODIFIERS[0];
+  const maxDifficulty = Math.max(10 - Math.floor(score / 300), 3);
+
+  const eligible = MODIFIERS.slice(1).filter((m) => m.difficulty <= maxDifficulty);
+  if (eligible.length < 2) {
+    const allOthers = MODIFIERS.slice(1);
+    return [allOthers[0], allOthers[1], nada];
+  }
+
+  const pool = eligible.filter((m) => !recentModifierIds.includes(m.id));
+
+  let picks: Modifier[];
+  if (pool.length >= 2) {
+    const shuffled = [...pool].sort(() => Math.random() - 0.5);
+    picks = [shuffled[0], shuffled[1]];
+  } else {
+    const shuffled = [...eligible].sort(() => Math.random() - 0.5);
+    picks = [shuffled[0], shuffled[1]];
+  }
+
+  for (const p of picks) {
+    recentModifierIds.push(p.id);
+    if (recentModifierIds.length > 6) {
+      recentModifierIds.shift();
+    }
+  }
+
+  return [picks[0], picks[1], nada];
+}
+
+export const NUM_LANES = 4;
+export const LANE_WIDTH = 2.5;
+export const laneX = (lane: number) => (lane - (NUM_LANES - 1) / 2) * LANE_WIDTH;
 
 export const THEMES: GameTheme[] = [
-  { primary: '#00ffff', secondary: '#ff00ff', accent: '#ffffff', background: '#050505', nebula: ['#4400ff', '#ff0088', '#00ffff'] }, // Cyan/Magenta
-  { primary: '#00ff88', secondary: '#ffcc00', accent: '#ffffff', background: '#020502', nebula: ['#004422', '#886600', '#00ff88'] }, // Emerald/Gold
-  { primary: '#ff4400', secondary: '#ffaa00', accent: '#ffffff', background: '#080200', nebula: ['#661100', '#884400', '#ff4400'] }, // Crimson/Orange
-  { primary: '#8800ff', secondary: '#4400ff', accent: '#ffffff', background: '#020005', nebula: ['#330066', '#110044', '#8800ff'] }, // Violet/Indigo
-  { primary: '#ffbb00', secondary: '#884400', accent: '#ffffff', background: '#050300', nebula: ['#442200', '#221100', '#ffbb00'] }, // Amber/Brown
-  { primary: '#aaddff', secondary: '#ffffff', accent: '#ffffff', background: '#000508', nebula: ['#002244', '#224466', '#aaddff'] }, // Ice Blue/White
-  { primary: '#00ff00', secondary: '#004400', accent: '#ffffff', background: '#000500', nebula: ['#002200', '#001100', '#00ff00'] }, // Toxic Green
-  { primary: '#ffff00', secondary: '#ff0000', accent: '#ffffff', background: '#050500', nebula: ['#444400', '#440000', '#ffff00'] }, // Solar Yellow
-  { primary: '#ff00ff', secondary: '#880088', accent: '#ffffff', background: '#050005', nebula: ['#440044', '#220022', '#ff00ff'] }, // Deep Purple
-  { primary: '#ffffff', secondary: '#444444', accent: '#ffffff', background: '#050505', nebula: ['#111111', '#222222', '#ffffff'] }, // Monochrome
+  { primary: '#00d9d9', secondary: '#d900d9', accent: '#cccccc', background: '#050505', nebula: ['#3a00cc', '#cc006d', '#00cccc'] }, // Cyan/Magenta
+  { primary: '#00cc66', secondary: '#cca300', accent: '#cccccc', background: '#020502', nebula: ['#00331a', '#664d00', '#00b359'] }, // Emerald/Gold
+  { primary: '#cc3600', secondary: '#cc8800', accent: '#cccccc', background: '#080200', nebula: ['#4d0d00', '#663300', '#b33000'] }, // Crimson/Orange
+  { primary: '#7700cc', secondary: '#3a00cc', accent: '#cccccc', background: '#020005', nebula: ['#26004d', '#0d0033', '#6600b3'] }, // Violet/Indigo
+  { primary: '#cc9600', secondary: '#663300', accent: '#cccccc', background: '#050300', nebula: ['#331a00', '#1a0d00', '#b38400'] }, // Amber/Brown
+  { primary: '#99ccff', secondary: '#cccccc', accent: '#cccccc', background: '#000508', nebula: ['#001a33', '#1a334d', '#80b3ff'] }, // Ice Blue/White
+  { primary: '#00cc00', secondary: '#003300', accent: '#cccccc', background: '#000500', nebula: ['#001a00', '#000d00', '#00b300'] }, // Toxic Green
+  { primary: '#cccc00', secondary: '#cc0000', accent: '#cccccc', background: '#050500', nebula: ['#333300', '#330000', '#b3b300'] }, // Solar Yellow
+  { primary: '#cc00cc', secondary: '#660066', accent: '#cccccc', background: '#050005', nebula: ['#330033', '#1a001a', '#b300b3'] }, // Deep Purple
+  { primary: '#cccccc', secondary: '#333333', accent: '#cccccc', background: '#050505', nebula: ['#0d0d0d', '#1a1a1a', '#b3b3b3'] }, // Monochrome
 ];
 
 export const useGameStore = create<GameState>((set) => ({
   status: 'START',
   score: 0,
-  highScore: 0,
+  highScore: saved.highScore ?? 0,
   lane: 0,
   speed: 0.5,
   obstacles: [],
   projectiles: [],
   powerUps: [],
   hasPowerUp: false,
+  powerUpTimeRemaining: 0,
+  hasShield: false,
+  shieldTimeRemaining: 0,
   themeIndex: 0,
+  isPaused: false,
+  volume: 0.5,
+  screenFlash: false,
+  flashColor: '#00ffff',
+  shakeIntensity: 0,
+  countdown: null,
+  showSelection: false,
+  selectionOptions: [],
+  selectionTimer: null,
+  activeModifier: null,
+  activeModifierTimeLeft: 0,
+  lastModifierMilestone: 0,
+  modifierApplyCountdown: null,
+  pendingModifier: null,
+  modifierChoices: [],
 
-  startGame: () => set({ 
-    status: 'PLAYING', 
-    score: 0, 
-    speed: 0.5, 
-    lane: 0, 
-    obstacles: [], 
-    projectiles: [],
-    powerUps: [],
-    hasPowerUp: false,
-    themeIndex: 0 
-  }),
-  
-  resetGame: () => set({ 
-    status: 'START', 
-    score: 0, 
-    speed: 0.5, 
-    lane: 0, 
-    obstacles: [], 
-    projectiles: [],
-    powerUps: [],
-    hasPowerUp: false,
-    themeIndex: 0 
-  }),
-  
-  setGameOver: () => set((state) => ({ 
-    status: 'GAMEOVER', 
-    highScore: Math.max(state.highScore, state.score),
-    hasPowerUp: false,
-    projectiles: []
-  })),
+  startGame: () => {
+    if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null; }
+    if (applyCountdownTimer) { clearInterval(applyCountdownTimer); applyCountdownTimer = null; }
+    set({
+      status: 'PLAYING',
+      score: 0,
+      speed: 0,
+      lane: 0,
+      obstacles: [],
+      projectiles: [],
+      powerUps: [],
+      hasPowerUp: false,
+      powerUpTimeRemaining: 0,
+      hasShield: false,
+      shieldTimeRemaining: 0,
+      themeIndex: 0,
+      isPaused: false,
+      countdown: '3',
+      showSelection: false,
+      selectionOptions: [],
+      activeModifier: null,
+      activeModifierTimeLeft: 0,
+      lastModifierMilestone: 0,
+      modifierApplyCountdown: null,
+      pendingModifier: null,
+      modifierChoices: [],
+    });
+
+    let step = 0;
+    const sequence = ['2', '1', 'GO!', null];
+    countdownTimer = window.setInterval(() => {
+      step++;
+      if (step < sequence.length) {
+        set({ countdown: sequence[step] });
+      } else {
+        if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null; }
+        set({ speed: 0.5, countdown: null });
+      }
+    }, 700);
+  },
+
+  resetGame: () => {
+    if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null; }
+    if (applyCountdownTimer) { clearInterval(applyCountdownTimer); applyCountdownTimer = null; }
+    if (modifierTimerInterval) { clearInterval(modifierTimerInterval); modifierTimerInterval = null; }
+    if (selectionTimerInterval) { clearInterval(selectionTimerInterval); selectionTimerInterval = null; }
+    set({
+      status: 'START',
+      score: 0,
+      speed: 0.5,
+      lane: 0,
+      obstacles: [],
+      projectiles: [],
+      powerUps: [],
+      hasPowerUp: false,
+      powerUpTimeRemaining: 0,
+      hasShield: false,
+      shieldTimeRemaining: 0,
+      themeIndex: 0,
+      isPaused: false,
+      countdown: null,
+      showSelection: false,
+      selectionOptions: [],
+      activeModifier: null,
+      activeModifierTimeLeft: 0,
+      lastModifierMilestone: 0,
+      modifierApplyCountdown: null,
+      pendingModifier: null,
+      modifierChoices: [],
+    });
+  },
+
+  setGameOver: () => {
+    playGameOver();
+    if (applyCountdownTimer) { clearInterval(applyCountdownTimer); applyCountdownTimer = null; }
+    set((state) => {
+      const newHighScore = Math.max(state.highScore, state.score);
+      saveHighScore(newHighScore);
+      saveRunChoices(state.modifierChoices);
+      return {
+        status: 'GAMEOVER',
+        highScore: newHighScore,
+        hasPowerUp: false,
+        powerUpTimeRemaining: 0,
+        hasShield: false,
+        shieldTimeRemaining: 0,
+        projectiles: [],
+        isPaused: false,
+        screenFlash: true,
+        flashColor: '#ff0000',
+        shakeIntensity: 3,
+        showSelection: false,
+        selectionOptions: [],
+        activeModifier: null,
+        activeModifierTimeLeft: 0,
+        modifierApplyCountdown: null,
+        pendingModifier: null,
+      };
+    });
+    setTimeout(() => set({ screenFlash: false }), 200);
+    setTimeout(() => set({ shakeIntensity: 0 }), 800);
+  },
 
   moveLeft: () => set((state) => ({ 
-    lane: Math.max(state.lane - 1, -1) 
+    lane: Math.max(state.lane - 1, 0) 
   })),
 
   moveRight: () => set((state) => ({ 
-    lane: Math.min(state.lane + 1, 1) 
+    lane: Math.min(state.lane + 1, NUM_LANES - 1) 
   })),
 
   updateScore: (delta) => set((state) => {
-    const newScore = state.score + delta;
-    const newThemeIndex = Math.floor(newScore / 100) % THEMES.length;
-    return { 
+    const multiplier = state.activeModifier ? state.activeModifier.multiplier : 1;
+    const newScore = state.score + delta * multiplier;
+    const newThemeIndex = Math.floor(newScore / 600) % THEMES.length;
+
+    let updates: Partial<GameState> = {
       score: newScore,
-      themeIndex: newThemeIndex
+      themeIndex: newThemeIndex,
     };
+
+    const modifierMilestone = Math.floor(newScore / 500);
+    if (modifierMilestone > state.lastModifierMilestone && !state.showSelection && !state.activeModifier) {
+      updates.lastModifierMilestone = modifierMilestone;
+      const options = pickModifiersForScore(newScore);
+      updates.showSelection = true;
+      updates.selectionOptions = options;
+      updates.isPaused = true;
+      updates.selectionTimer = 10;
+    }
+
+    return updates;
   }),
 
   addObstacle: (obstacle) => set((state) => ({ 
@@ -117,5 +304,147 @@ export const useGameStore = create<GameState>((set) => ({
 
   movePowerUps: (powerUps) => set({ powerUps }),
 
-  collectPowerUp: () => set({ hasPowerUp: true }),
+  collectPowerUp: () => {
+    playPowerUp();
+    set({ hasPowerUp: true, powerUpTimeRemaining: 7 });
+  },
+
+  decrementPowerUpTime: () => set((state) => {
+    if (state.powerUpTimeRemaining <= 0) {
+      return { hasPowerUp: false, powerUpTimeRemaining: 0 };
+    }
+    return { powerUpTimeRemaining: state.powerUpTimeRemaining - 1 };
+  }),
+
+  collectShield: () => {
+    playShield();
+    set({ hasShield: true, shieldTimeRemaining: 10 });
+  },
+
+  decrementShieldTime: () => set((state) => {
+    if (state.shieldTimeRemaining <= 0) {
+      return { hasShield: false, shieldTimeRemaining: 0 };
+    }
+    return { shieldTimeRemaining: state.shieldTimeRemaining - 1 };
+  }),
+
+  consumeShield: () => set({ hasShield: false, shieldTimeRemaining: 0 }),
+
+  togglePause: () => set((state) => {
+    if (state.status !== 'PLAYING') return state;
+    return { isPaused: !state.isPaused };
+  }),
+
+  setVolumeState: (vol) => set({ volume: vol }),
+
+  triggerScreenFlash: (color?: string) => {
+    set({ screenFlash: true, flashColor: color ?? '#00ffff' });
+    setTimeout(() => set({ screenFlash: false }), 150);
+  },
+
+  showModifierSelection: () => set((state) => {
+    if (state.showSelection || state.activeModifier) return state;
+    const options = pickModifiersForScore(state.score);
+    return {
+      showSelection: true,
+      selectionOptions: options,
+      isPaused: true,
+      selectionTimer: 10,
+    };
+  }),
+
+  selectModifier: (index) => {
+    const state = useGameStore.getState();
+    const modifier = state.selectionOptions[index];
+    if (!modifier) return;
+    if (selectionTimerInterval) { clearInterval(selectionTimerInterval); selectionTimerInterval = null; }
+    const choice: ModifierChoice = {
+      options: state.selectionOptions.map((o) => ({ id: o.id, name: o.name })),
+      chosen: { id: modifier.id, name: modifier.name },
+      score: state.score,
+    };
+    set({
+      showSelection: false,
+      selectionOptions: [],
+      selectionTimer: null,
+      pendingModifier: modifier,
+      modifierApplyCountdown: '3',
+      modifierChoices: [...state.modifierChoices, choice],
+    });
+    if (applyCountdownTimer) { clearInterval(applyCountdownTimer); }
+    let count = 3;
+    applyCountdownTimer = window.setInterval(() => {
+      count--;
+      if (count <= 0) {
+        if (applyCountdownTimer) { clearInterval(applyCountdownTimer); applyCountdownTimer = null; }
+        const pending = useGameStore.getState().pendingModifier;
+        if (pending) {
+          useGameStore.getState().activateModifier(pending);
+        }
+      } else {
+        set({ modifierApplyCountdown: String(count) });
+      }
+    }, 1000);
+  },
+
+  startModifierApplyCountdown: (modifier) => {
+    set({
+      pendingModifier: modifier,
+      modifierApplyCountdown: '3',
+    });
+    if (applyCountdownTimer) { clearInterval(applyCountdownTimer); }
+    let count = 3;
+    applyCountdownTimer = window.setInterval(() => {
+      count--;
+      if (count <= 0) {
+        if (applyCountdownTimer) { clearInterval(applyCountdownTimer); applyCountdownTimer = null; }
+        const pending = useGameStore.getState().pendingModifier;
+        if (pending) {
+          useGameStore.getState().activateModifier(pending);
+        }
+      } else {
+        set({ modifierApplyCountdown: String(count) });
+      }
+    }, 1000);
+  },
+
+  activateModifier: (modifier) => {
+    if (selectionTimerInterval) { clearInterval(selectionTimerInterval); selectionTimerInterval = null; }
+    set({
+      showSelection: false,
+      selectionOptions: [],
+      selectionTimer: null,
+      activeModifier: modifier,
+      activeModifierTimeLeft: modifier.duration,
+      isPaused: false,
+      pendingModifier: null,
+      modifierApplyCountdown: null,
+    });
+    if (modifierTimerInterval) { clearInterval(modifierTimerInterval); modifierTimerInterval = null; }
+    modifierTimerInterval = window.setInterval(() => {
+      useGameStore.getState().tickModifierTimer();
+    }, 1000);
+  },
+
+  deactivateModifier: () => {
+    if (modifierTimerInterval) { clearInterval(modifierTimerInterval); modifierTimerInterval = null; }
+    set({
+      activeModifier: null,
+      activeModifierTimeLeft: 0,
+    });
+  },
+
+  tickSelectionTimer: () => {
+    // Handled by ModifierCards component interval
+  },
+
+  tickModifierTimer: () => set((state) => {
+    if (!state.activeModifier) return {};
+    const newTime = state.activeModifierTimeLeft - 1;
+    if (newTime <= 0) {
+      if (modifierTimerInterval) { clearInterval(modifierTimerInterval); modifierTimerInterval = null; }
+      return { activeModifier: null, activeModifierTimeLeft: 0 };
+    }
+    return { activeModifierTimeLeft: newTime };
+  }),
 }));

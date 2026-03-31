@@ -1,6 +1,16 @@
 
 export type GameStatus = 'START' | 'PLAYING' | 'GAMEOVER';
 
+export interface Modifier {
+  id: string;
+  name: string;
+  description: string;
+  multiplier: number;
+  color: string;
+  duration: number;
+  difficulty: number;
+}
+
 export interface ObstacleData {
   id: string;
   lane: number;
@@ -17,6 +27,7 @@ export interface PowerUpData {
   id: string;
   lane: number;
   z: number;
+  type: 'weapon' | 'shield';
 }
 
 export interface GameTheme {
@@ -25,6 +36,12 @@ export interface GameTheme {
   accent: string;
   background: string;
   nebula: string[];
+}
+
+export interface ModifierChoice {
+  options: { id: string; name: string }[];
+  chosen: { id: string; name: string };
+  score: number;
 }
 
 export interface GameState {
@@ -37,8 +54,26 @@ export interface GameState {
   projectiles: ProjectileData[];
   powerUps: PowerUpData[];
   hasPowerUp: boolean;
+  powerUpTimeRemaining: number;
+  hasShield: boolean;
+  shieldTimeRemaining: number;
   themeIndex: number;
-  
+  isPaused: boolean;
+  volume: number;
+  screenFlash: boolean;
+  flashColor: string;
+  shakeIntensity: number;
+  countdown: string | null;
+  showSelection: boolean;
+  selectionOptions: Modifier[];
+  selectionTimer: number | null;
+  activeModifier: Modifier | null;
+  activeModifierTimeLeft: number;
+  lastModifierMilestone: number;
+  modifierApplyCountdown: string | null;
+  pendingModifier: Modifier | null;
+  modifierChoices: ModifierChoice[];
+
   startGame: () => void;
   resetGame: () => void;
   setGameOver: () => void;
@@ -57,4 +92,18 @@ export interface GameState {
   removePowerUp: (id: string) => void;
   movePowerUps: (powerUps: PowerUpData[]) => void;
   collectPowerUp: () => void;
+  decrementPowerUpTime: () => void;
+  collectShield: () => void;
+  decrementShieldTime: () => void;
+  consumeShield: () => void;
+  togglePause: () => void;
+  setVolumeState: (vol: number) => void;
+  triggerScreenFlash: (color?: string) => void;
+  showModifierSelection: () => void;
+  selectModifier: (index: number) => void;
+  startModifierApplyCountdown: (modifier: Modifier) => void;
+  activateModifier: (modifier: Modifier) => void;
+  deactivateModifier: () => void;
+  tickSelectionTimer: () => void;
+  tickModifierTimer: () => void;
 }

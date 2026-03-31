@@ -1,7 +1,10 @@
 import { useFrame } from '@react-three/fiber';
 import { useRef, useEffect } from 'react';
 import * as THREE from 'three';
-import { useGameStore, THEMES } from '../../store/gameStore';
+import { useGameStore, THEMES, laneX } from '../../store/gameStore';
+
+const DOUBLE_TAP_WINDOW = 300;
+const DELAY_INPUT_MS = 400;
 
 export const Player = () => {
   const meshRef = useRef<THREE.Group>(null);
@@ -27,18 +30,53 @@ export const Player = () => {
   const repulsorORef = useRef<THREE.Mesh>(null);
   const repulsorIRef = useRef<THREE.Mesh>(null);
 
+  // Shield aura
+  const shieldAuraRef = useRef<THREE.Mesh>(null);
+  const shieldRing1Ref = useRef<THREE.Mesh>(null);
+  const shieldRing2Ref = useRef<THREE.Mesh>(null);
+  const prevCountdownRef = useRef<string | null>('__init');
+
+  const activeModifierIdRef = useRef<string | null>(null);
+  const lastTapRef = useRef<{ key: string; time: number } | null>(null);
+  const delayedInputQueueRef = useRef<{ action: 'left' | 'right'; time: number }[]>([]);
+
   const lane = useGameStore((s) => s.lane);
   const status = useGameStore((s) => s.status);
   const speed = useGameStore((s) => s.speed);
   const themeIndex = useGameStore((s) => s.themeIndex);
+  const hasShield = useGameStore((s) => s.hasShield);
+  const isPaused = useGameStore((s) => s.isPaused);
+  const countdown = useGameStore((s) => s.countdown);
+  const activeModifierId = useGameStore((s) => s.activeModifier?.id);
+  const isInvisible = activeModifierId === 'invisible';
   const theme = THEMES[themeIndex];
 
-  const targetX = lane * 3.33;
+  const targetX = laneX(lane);
 
   // ── Animation loop ─────────────────────────────────────────────
   useFrame(({ clock }, delta) => {
+    if (isPaused) return;
+
     const dt = Math.min(delta, 0.1);
     const t = clock.elapsedTime;
+
+    // Process delayed input queue
+    if (activeModifierIdRef.current === 'delay_input') {
+      const now = Date.now();
+      const queue = delayedInputQueueRef.current;
+      while (queue.length > 0 && now - queue[0].time >= DELAY_INPUT_MS) {
+        const input = queue.shift()!;
+        if (input.action === 'left') useGameStore.getState().moveLeft();
+        else useGameStore.getState().moveRight();
+      }
+    } else {
+      delayedInputQueueRef.current = [];
+    }
+
+    // Clear double tap state if modifier changed
+    if (activeModifierIdRef.current !== 'double_tap') {
+      lastTapRef.current = null;
+    }
 
     if (meshRef.current) {
       const mesh = meshRef.current;
@@ -53,8 +91,18 @@ export const Player = () => {
       // Speed pitch — nose tips down at high speed (looks aggressive)
       mesh.rotation.x = THREE.MathUtils.lerp(mesh.rotation.x, -speed * 0.07, dt * 2.5);
 
+      // Countdown entry — ship flies in from behind
+      if (status === 'PLAYING' && countdown !== null) {
+        if (prevCountdownRef.current === '__init') {
+          mesh.position.z = 15;
+        }
+        mesh.position.z = THREE.MathUtils.lerp(mesh.position.z, 0, dt * 2.5);
+        mesh.position.y = THREE.MathUtils.lerp(mesh.position.y, 0.6, dt * 5);
+      }
+      prevCountdownRef.current = countdown;
+
       // Organic compound hover: two sine waves to avoid robotic feel
-      if (status === 'PLAYING') {
+      if (status === 'PLAYING' && countdown === null) {
         const hover = Math.sin(t * 3.2) * 0.11 + Math.sin(t * 1.6 + 1.0) * 0.04;
         mesh.position.y = THREE.MathUtils.lerp(mesh.position.y, 0.6 + hover, dt * 9);
       }
@@ -92,11 +140,11 @@ export const Player = () => {
     }
 
     // ── Engine light intensity — fast flicker over slow base ────────
-    const baseIntensity = 4 + speed * 3;
+    const baseIntensity = 2.4 + speed * 1.5;
     if (engLightLRef.current)
-      engLightLRef.current.intensity = baseIntensity + Math.sin(t * 30 + 0.2) * 1.8;
+      engLightLRef.current.intensity = baseIntensity + Math.sin(t * 30 + 0.2) * 0.8;
     if (engLightRRef.current)
-      engLightRRef.current.intensity = baseIntensity + Math.sin(t * 27 + 1.5) * 1.8;
+      engLightRRef.current.intensity = baseIntensity + Math.sin(t * 27 + 1.5) * 0.8;
 
     // ── Canopy HUD scan-line flicker ────────────────────────────────
     if (canopyRef.current) {
@@ -114,15 +162,70 @@ export const Player = () => {
       const s = 1 + Math.sin(t * 5.0 + Math.PI) * 0.1; // opposite phase
       repulsorIRef.current.scale.set(s, 1, s);
     }
+
+    // ── Shield aura — pulsing energy barrier ─────────────────────────
+    if (shieldAuraRef.current) {
+      const pulse = 1 + Math.sin(t * 2) * 0.04;
+      shieldAuraRef.current.scale.setScalar(pulse);
+      (shieldAuraRef.current.material as THREE.MeshBasicMaterial).opacity = 0.18 + Math.sin(t * 2) * 0.03;
+    }
+    if (shieldRing1Ref.current) {
+      shieldRing1Ref.current.rotation.y = t * 1.5;
+      shieldRing1Ref.current.rotation.x = t * 0.8;
+    }
+    if (shieldRing2Ref.current) {
+      shieldRing2Ref.current.rotation.y = -t * 1.2;
+      shieldRing2Ref.current.rotation.z = t * 0.6;
+    }
   });
 
   // ── Input handling ─────────────────────────────────────────────
   useEffect(() => {
+    const unsub = useGameStore.subscribe((state) => {
+      activeModifierIdRef.current = state.activeModifier?.id ?? null;
+    });
+    activeModifierIdRef.current = useGameStore.getState().activeModifier?.id ?? null;
+    return unsub;
+  }, []);
+
+  useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (status !== 'PLAYING') return;
-      if (e.key === 'ArrowLeft' || e.key === 'a') useGameStore.getState().moveLeft();
-      if (e.key === 'ArrowRight' || e.key === 'd') useGameStore.getState().moveRight();
+      const state = useGameStore.getState();
+      if (state.status !== 'PLAYING' || state.isPaused || state.countdown !== null) return;
+
+      const isLeft = e.key === 'ArrowLeft' || e.key === 'a';
+      const isRight = e.key === 'ArrowRight' || e.key === 'd';
+      if (!isLeft && !isRight) return;
+
+      const modId = activeModifierIdRef.current;
+      const now = Date.now();
+      let action: 'left' | 'right' = isLeft ? 'left' : 'right';
+
+      if (modId === 'controls_inverted') {
+        action = action === 'left' ? 'right' : 'left';
+      }
+
+      if (modId === 'double_tap') {
+        const lastTap = lastTapRef.current;
+        if (lastTap && lastTap.key === e.key && now - lastTap.time < DOUBLE_TAP_WINDOW) {
+          lastTapRef.current = null;
+          if (action === 'left') useGameStore.getState().moveLeft();
+          else useGameStore.getState().moveRight();
+        } else {
+          lastTapRef.current = { key: e.key, time: now };
+        }
+        return;
+      }
+
+      if (modId === 'delay_input') {
+        delayedInputQueueRef.current.push({ action, time: now });
+        return;
+      }
+
+      if (action === 'left') useGameStore.getState().moveLeft();
+      else useGameStore.getState().moveRight();
     };
+
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [status]);
@@ -132,7 +235,7 @@ export const Player = () => {
   const plateMat = { color: '#090b0f', metalness: 1.0, roughness: 0.15 } as const;
 
   return (
-    <group ref={meshRef} position={[0, 0.6, 0]}>
+    <group ref={meshRef} position={[0, 0.6, 0]} visible={!isInvisible}>
 
       {/* ═══════════════════════════════════════════
           MAIN HULL BODY
@@ -173,22 +276,22 @@ export const Player = () => {
       {/* Port side stripe */}
       <mesh position={[-0.32, 0.06, 0.05]}>
         <boxGeometry args={[0.012, 0.012, 1.55]} />
-        <meshStandardMaterial color={theme.primary} emissive={theme.primary} emissiveIntensity={4} />
+        <meshStandardMaterial color={theme.primary} emissive={theme.primary} emissiveIntensity={1.5} />
       </mesh>
       {/* Starboard side stripe */}
       <mesh position={[0.32, 0.06, 0.05]}>
         <boxGeometry args={[0.012, 0.012, 1.55]} />
-        <meshStandardMaterial color={theme.secondary} emissive={theme.secondary} emissiveIntensity={4} />
+        <meshStandardMaterial color={theme.secondary} emissive={theme.secondary} emissiveIntensity={1.5} />
       </mesh>
       {/* Top centerline */}
       <mesh position={[0, 0.14, 0.1]}>
         <boxGeometry args={[0.018, 0.008, 1.5]} />
-        <meshStandardMaterial color={theme.primary} emissive={theme.primary} emissiveIntensity={6} />
+        <meshStandardMaterial color={theme.primary} emissive={theme.primary} emissiveIntensity={2} />
       </mesh>
       {/* Aft cross-brace line */}
       <mesh position={[0, 0.0, -0.72]}>
         <boxGeometry args={[0.65, 0.008, 0.01]} />
-        <meshStandardMaterial color={theme.secondary} emissive={theme.secondary} emissiveIntensity={5} />
+        <meshStandardMaterial color={theme.secondary} emissive={theme.secondary} emissiveIntensity={1.8} />
       </mesh>
 
       {/* ═══════════════════════════════════════════
@@ -206,17 +309,17 @@ export const Player = () => {
       {/* Port frame strut */}
       <mesh position={[-0.185, 0.27, 0.32]}>
         <boxGeometry args={[0.014, 0.22, 0.62]} />
-        <meshStandardMaterial color={theme.primary} emissive={theme.primary} emissiveIntensity={3.5} />
+        <meshStandardMaterial color={theme.primary} emissive={theme.primary} emissiveIntensity={1.4} />
       </mesh>
       {/* Starboard frame strut */}
       <mesh position={[0.185, 0.27, 0.32]}>
         <boxGeometry args={[0.014, 0.22, 0.62]} />
-        <meshStandardMaterial color={theme.primary} emissive={theme.primary} emissiveIntensity={3.5} />
+        <meshStandardMaterial color={theme.primary} emissive={theme.primary} emissiveIntensity={1.4} />
       </mesh>
       {/* Canopy top rim */}
       <mesh position={[0, 0.38, 0.32]}>
         <boxGeometry args={[0.38, 0.014, 0.64]} />
-        <meshStandardMaterial color={theme.secondary} emissive={theme.secondary} emissiveIntensity={3} />
+        <meshStandardMaterial color={theme.secondary} emissive={theme.secondary} emissiveIntensity={1.2} />
       </mesh>
 
       {/* ═══════════════════════════════════════════
@@ -238,12 +341,12 @@ export const Player = () => {
         {/* Leading edge neon strip */}
         <mesh position={[0, 0.05, 0.52]}>
           <boxGeometry args={[1.05, 0.012, 0.015]} />
-          <meshStandardMaterial color={theme.primary} emissive={theme.primary} emissiveIntensity={6} />
+          <meshStandardMaterial color={theme.primary} emissive={theme.primary} emissiveIntensity={2.2} />
         </mesh>
         {/* Panel glow face */}
         <mesh position={[0.08, 0.05, 0.05]}>
           <boxGeometry args={[0.8, 0.008, 0.7]} />
-          <meshStandardMaterial color={theme.primary} emissive={theme.primary} emissiveIntensity={1.5} transparent opacity={0.5} />
+          <meshStandardMaterial color={theme.primary} emissive={theme.primary} emissiveIntensity={0.6} transparent opacity={0.3} />
         </mesh>
         {/* Winglet */}
         <group position={[-0.6, 0.0, -0.2]} rotation={[0, 0.25, -0.22]}>
@@ -253,7 +356,7 @@ export const Player = () => {
           </mesh>
           <mesh position={[0, 0.13, 0]}>
             <boxGeometry args={[0.015, 0.24, 0.015]} />
-            <meshStandardMaterial color={theme.secondary} emissive={theme.secondary} emissiveIntensity={10} />
+            <meshStandardMaterial color={theme.secondary} emissive={theme.secondary} emissiveIntensity={4} />
           </mesh>
         </group>
       </group>
@@ -317,15 +420,15 @@ export const Player = () => {
         {/* Glowing nozzle face */}
         <mesh ref={nozzleLRef} position={[0, 0, -0.38]} rotation={[Math.PI / 2, 0, 0]}>
           <cylinderGeometry args={[0.11, 0.155, 0.07, 14]} />
-          <meshStandardMaterial color={theme.secondary} emissive={theme.secondary} emissiveIntensity={20} />
+          <meshStandardMaterial color={theme.secondary} emissive={theme.secondary} emissiveIntensity={8} />
         </mesh>
         {/* Exhaust cone */}
         <mesh ref={exhaustLRef} position={[0, 0, -0.62]} rotation={[-Math.PI / 2, 0, 0]}>
           <coneGeometry args={[0.11, 0.55, 14, 1, true]} />
-          <meshStandardMaterial color={theme.secondary} emissive={theme.secondary} emissiveIntensity={9}
-            transparent opacity={0.38} side={THREE.DoubleSide} depthWrite={false} />
+          <meshStandardMaterial color={theme.secondary} emissive={theme.secondary} emissiveIntensity={4}
+            transparent opacity={0.2} side={THREE.DoubleSide} depthWrite={false} />
         </mesh>
-        <pointLight ref={engLightLRef} color={theme.secondary} intensity={5} distance={5} position={[0, 0, -0.55]} />
+        <pointLight ref={engLightLRef} color={theme.secondary} intensity={2.5} distance={5} position={[0, 0, -0.55]} />
       </group>
 
       {/* ── Right nacelle ── */}
@@ -364,16 +467,16 @@ export const Player = () => {
         </mesh>
         <mesh position={[0, 0, 0.21]} rotation={[Math.PI / 2, 0, 0]}>
           <torusGeometry args={[0.14, 0.018, 6, 20]} />
-          <meshStandardMaterial color={theme.primary} emissive={theme.primary} emissiveIntensity={4} />
+          <meshStandardMaterial color={theme.primary} emissive={theme.primary} emissiveIntensity={2} />
         </mesh>
         <mesh ref={nozzleCRef} position={[0, 0, -0.24]} rotation={[Math.PI / 2, 0, 0]}>
           <cylinderGeometry args={[0.07, 0.1, 0.07, 12]} />
-          <meshStandardMaterial color={theme.primary} emissive={theme.primary} emissiveIntensity={22} />
+          <meshStandardMaterial color={theme.primary} emissive={theme.primary} emissiveIntensity={8} />
         </mesh>
         <mesh ref={exhaustCRef} position={[0, 0, -0.42]} rotation={[-Math.PI / 2, 0, 0]}>
           <coneGeometry args={[0.08, 0.45, 12, 1, true]} />
-          <meshStandardMaterial color={theme.primary} emissive={theme.primary} emissiveIntensity={6}
-            transparent opacity={0.3} side={THREE.DoubleSide} depthWrite={false} />
+          <meshStandardMaterial color={theme.primary} emissive={theme.primary} emissiveIntensity={2}
+            transparent opacity={0.15} side={THREE.DoubleSide} depthWrite={false} />
         </mesh>
       </group>
 
@@ -383,11 +486,11 @@ export const Player = () => {
       {/* Twin running lights */}
       <mesh position={[-0.14, -0.04, 1.25]}>
         <sphereGeometry args={[0.038, 8, 8]} />
-        <meshStandardMaterial color={theme.primary} emissive={theme.primary} emissiveIntensity={18} />
+        <meshStandardMaterial color={theme.primary} emissive={theme.primary} emissiveIntensity={6} />
       </mesh>
       <mesh position={[0.14, -0.04, 1.25]}>
         <sphereGeometry args={[0.038, 8, 8]} />
-        <meshStandardMaterial color={theme.primary} emissive={theme.primary} emissiveIntensity={18} />
+        <meshStandardMaterial color={theme.primary} emissive={theme.primary} emissiveIntensity={6} />
       </mesh>
       {/* Nose sensor ring */}
       <mesh position={[0, 0.01, 1.28]} rotation={[Math.PI / 2, 0, 0]}>
@@ -409,19 +512,19 @@ export const Player = () => {
       ═══════════════════════════════════════════ */}
       <mesh ref={repulsorORef} position={[0, -0.145, 0.12]} rotation={[Math.PI / 2, 0, 0]}>
         <torusGeometry args={[0.3, 0.022, 8, 36]} />
-        <meshStandardMaterial color={theme.primary} emissive={theme.primary} emissiveIntensity={4}
-          transparent opacity={0.75} />
+        <meshStandardMaterial color={theme.primary} emissive={theme.primary} emissiveIntensity={1.8}
+          transparent opacity={0.4} />
       </mesh>
       <mesh ref={repulsorIRef} position={[0, -0.145, 0.12]} rotation={[Math.PI / 2, 0, 0]}>
         <torusGeometry args={[0.17, 0.016, 8, 28]} />
-        <meshStandardMaterial color={theme.secondary} emissive={theme.secondary} emissiveIntensity={3.5}
-          transparent opacity={0.6} />
+        <meshStandardMaterial color={theme.secondary} emissive={theme.secondary} emissiveIntensity={1.4}
+          transparent opacity={0.3} />
       </mesh>
       {/* Center repulsor dot */}
       <mesh position={[0, -0.148, 0.12]} rotation={[Math.PI / 2, 0, 0]}>
         <circleGeometry args={[0.06, 16]} />
-        <meshStandardMaterial color={theme.primary} emissive={theme.primary} emissiveIntensity={5}
-          transparent opacity={0.5} side={THREE.DoubleSide} />
+        <meshStandardMaterial color={theme.primary} emissive={theme.primary} emissiveIntensity={2}
+          transparent opacity={0.3} side={THREE.DoubleSide} />
       </mesh>
 
       {/* ═══════════════════════════════════════════
@@ -431,6 +534,53 @@ export const Player = () => {
       <pointLight color={theme.primary} intensity={2.5} distance={4} position={[0, 0.4, 0.35]} />
       {/* Belly fill — repulsor glow */}
       <pointLight color={theme.primary} intensity={1.5} distance={3} position={[0, -0.5, 0.1]} />
+
+      {/* ═══════════════════════════════════════════
+          SHIELD AURA (when active)
+      ═══════════════════════════════════════════ */}
+      {/* Always mounted so refs stay valid; visibility toggled via `visible` prop */}
+      {/* renderOrder=2 + depthTest=false: renders after opaque road geometry so the */}
+      {/* shield sphere is never clipped by the road's depth buffer values.          */}
+      <mesh ref={shieldAuraRef} visible={hasShield} renderOrder={2}>
+        <sphereGeometry args={[0.75, 24, 24]} />
+        <meshBasicMaterial
+          color={theme.primary}
+          transparent
+          opacity={0.08}
+          side={THREE.DoubleSide}
+          blending={THREE.AdditiveBlending}
+          depthWrite={false}
+          depthTest={false}
+        />
+      </mesh>
+
+      <mesh ref={shieldRing1Ref} visible={hasShield} renderOrder={3}>
+        <torusGeometry args={[0.6, 0.025, 8, 48]} />
+        <meshBasicMaterial
+          color={theme.primary}
+          transparent
+          opacity={0.5}
+          blending={THREE.AdditiveBlending}
+          depthWrite={false}
+          depthTest={false}
+        />
+      </mesh>
+
+      <mesh ref={shieldRing2Ref} visible={hasShield} renderOrder={3}>
+        <torusGeometry args={[0.7, 0.02, 8, 48]} />
+        <meshBasicMaterial
+          color={theme.secondary}
+          transparent
+          opacity={0.35}
+          blending={THREE.AdditiveBlending}
+          depthWrite={false}
+          depthTest={false}
+        />
+      </mesh>
+
+      {hasShield && (
+        <pointLight color={theme.primary} intensity={2.5} distance={6} decay={2} />
+      )}
     </group>
   );
 };

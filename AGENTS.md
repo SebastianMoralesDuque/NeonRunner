@@ -1,114 +1,83 @@
-# AGENTS.md
+# AGENTS.md - Neon Runner
 
 ## Project Overview
-
-**Neon Runner** — a cyberpunk endless runner game built with React 19, Three.js (via React Three Fiber), Zustand, Tailwind CSS v4, and Vite. The player navigates a ship through neon-lit lanes avoiding obstacles while speed increases over time.
-
-## Prerequisites
-
-- **Node.js >= 20** — required by `@tailwindcss/oxide` (used by `@tailwindcss/vite`). Node 18 will fail to load native bindings.
-- Install/switch via nvm: `nvm install 20 && nvm use 20`
+Cyberpunk-themed 3D endless runner built with React 19, Three.js, and Zustand.
 
 ## Commands
-
 ```bash
-npm run dev       # Start Vite dev server at http://localhost:3000 (HMR enabled)
-npm run build     # Production build (output: dist/)
-npm run preview   # Preview production build
-npm run clean     # Remove dist/
-npm run lint      # TypeScript type-check only (tsc --noEmit) — NO ESLint configured
+npm run dev        # Start dev server (port 3000)
+npm run build      # Production build to dist/
+npm run preview    # Preview production build
+npm run clean      # Remove dist/
+npm run lint       # Type-check only (tsc --noEmit, no linter configured)
 ```
-
-**No test framework is configured.** There are no test files or test scripts. Do not assume Jest/Vitest/etc. If adding tests, suggest a framework to the user first.
+**No test framework is configured.** There is no command to run tests.
 
 ## Architecture
-
 ```
 src/
-├── main.tsx              # Entry point, global error handler
-├── App.tsx               # Canvas setup, ErrorBoundary, scene composition
-├── index.css             # Tailwind v4 import + global styles
-├── types.ts              # Shared TypeScript interfaces (GameState, ObstacleData, GameTheme)
-├── store/
-│   └── gameStore.ts      # Zustand store — all game state + actions
-└── components/game/
-    ├── Player.tsx         # Ship mesh, keyboard input, lane switching
-    ├── Road.tsx           # Infinite scrolling road + lane markings
-    ├── Obstacles.tsx      # Spawning, collision detection, scoring
-    ├── Effects.tsx        # Post-processing (bloom, noise, vignette) + environment
-    ├── HUD.tsx            # UI overlay (start screen, score, game over)
-    └── City.tsx           # Procedural cityscape (currently unused in App.tsx)
+  App.tsx              # Root component, Canvas setup, ErrorBoundary
+  main.tsx             # Entry point, global error handler
+  types.ts             # Shared TypeScript interfaces/types
+  index.css            # Tailwind import + global styles
+  store/gameStore.ts   # Zustand store (all game state + actions)
+  hooks/useAudio.ts    # Audio hook (Howler + procedural Web Audio API)
+  audio/sfx.ts         # Procedural SFX (shoot, hit, powerup, etc.)
+  components/game/     # All game components (Player, HUD, Road, etc.)
 ```
 
-**Path alias:** `@/*` maps to project root (configured in `tsconfig.json` and `vite.config.ts`). Use `@/src/...` or relative imports — codebase currently uses relative imports.
-
-**State flow:** Zustand store (`useGameStore`) is the single source of truth. Components subscribe via `useGameStore()` hook. Game loop runs inside `useFrame` callbacks from React Three Fiber.
+## State Management
+- **Zustand** is the sole state manager. Store is `src/store/gameStore.ts`.
+- Access state via `useGameStore((s) => s.field)` in components.
+- Call actions via `useGameStore.getState().actionName()` outside React (e.g., in `useFrame` or event handlers).
+- The store owns ALL game logic — components should be thin renderers.
 
 ## Code Style
 
-### TypeScript
-- Target: ES2022, strict mode not enabled, `noEmit: true`
-- Use explicit types for component props: `({ data }: { data: ObstacleData })`
-- Use `interface` for object shapes, `type` for unions/aliases (see `types.ts`)
-- `useRef<THREE.Group>(null)` pattern for Three.js object refs
-
 ### Imports
-- External libraries first, then internal modules
-- Three.js imported as `import * as THREE from 'three'`
-- React hooks imported individually: `import { useRef, useMemo, useEffect } from 'react'`
-- Zustand store imported as named: `import { useGameStore, THEMES } from '../../store/gameStore'`
-
-### Components
-- Functional components with arrow syntax: `export const ComponentName = () => { ... }`
-- Default export only for root `App` component
-- Named exports for all other components
-- No prop destructuring in signature for complex props — destructure inside body
+- Group imports: libraries first, then local imports with relative paths.
+- No path alias imports (`@/`) used in existing code — prefer relative imports like `../../store/gameStore`.
+- Named imports preferred; default exports only for `App` and entry point.
 
 ### Naming
-- Components/Types: `PascalCase` (`Player`, `GameState`, `ObstacleData`)
-- Constants: `UPPER_SNAKE_CASE` (`OBSTACLE_SPAWN_INTERVAL`, `COLLISION_THRESHOLD_Z`)
-- Functions/hooks: `camelCase` (`moveLeft`, `updateScore`)
-- Zustand actions: verb phrases (`startGame`, `setGameOver`, `removeObstacle`)
+- **Components**: `PascalCase` (e.g., `Player`, `HUD`, `ModifierCards`)
+- **Hooks**: `camelCase` prefixed with `use` (e.g., `useAudio`)
+- **Interfaces/Types**: `PascalCase` (e.g., `GameState`, `ObstacleData`)
+- **Constants**: `UPPER_SNAKE_CASE` (e.g., `NUM_LANES`, `LANE_WIDTH`, `DOUBLE_TAP_WINDOW`)
+- **Store actions**: `camelCase` verbs (e.g., `startGame`, `moveLeft`, `updateScore`)
+- **Files**: `PascalCase.tsx` for React components, `camelCase.ts` for utilities/hooks
 
-### Formatting
-- No formatter config present (no .prettierrc, .eslintrc)
-- Use 2-space indentation (consistent throughout)
-- Single quotes in TS, double quotes in JSX
-- Blank line between imports and component body
-- No semicolons in imports but semicolons used in code (mixed — follow surrounding file)
+### Types
+- Use `interface` for object shapes, `type` for unions (e.g., `GameStatus = 'START' | 'PLAYING' | 'GAMEOVER'`).
+- Define all shared types in `src/types.ts`.
+- Inline `as const` for material style objects: `{ color: '#0e1014', metalness: 0.96 } as const`.
+- Use `useRef<T>()` with explicit Three.js types (e.g., `useRef<THREE.Group>(null)`).
 
-### Three.js / React Three Fiber
-- Always clamp delta: `const safeDelta = Math.min(delta, 0.1)` to prevent jumps after tab backgrounding
-- Use `useFrame` for game loop logic, not `requestAnimationFrame`
-- Prefer `useMemo` for expensive computations (geometry, positions)
-- Mesh materials: use `meshStandardMaterial` with `metalness`/`roughness` for PBR
-- Emissive materials for neon effects: `emissive={color} emissiveIntensity={value}`
+### Three.js / R3F Conventions
+- Use `useFrame` for per-frame animation logic.
+- Use `useRef` for mutable mesh references; never store refs in state.
+- Use `THREE.MathUtils.lerp()` for smooth interpolation.
+- Clamp `delta` in `useFrame`: `const dt = Math.min(delta, 0.1)`.
+- Use `@react-three/drei` helpers (e.g., `PerspectiveCamera`).
+- Materials defined as inline objects spread into JSX: `<meshStandardMaterial {...hullMat} />`.
 
-### Tailwind CSS
-- Tailwind v4 with `@tailwindcss/vite` plugin (NOT PostCSS-based)
-- Use arbitrary values for precise control: `className="z-[100]"`, `className="bg-[#050505]"`
-- Fonts: `font-mono` (JetBrains Mono) for HUD/debug, default for body
+### React Conventions
+- Functional components with `export const Name = () => {}`.
+- `useEffect` for side effects (event listeners, subscriptions).
+- Subscribe to Zustand store outside React via `useGameStore.subscribe()` in `useEffect`.
+- Use `motion` from `motion/react` for UI animations with `AnimatePresence`.
+- Tailwind CSS v4 for all UI styling (not Three.js scene styling).
 
 ### Error Handling
-- `ErrorBoundary` class component wraps the entire app in `App.tsx`
-- Global `window.onerror` handler in `main.tsx` renders error overlay
-- Console logging for debugging: `console.log("App rendering v1.0.1...")`
+- `ErrorBoundary` class component wraps `<App>` for React errors.
+- `window.onerror` handler in `main.tsx` for global uncaught errors.
+- `try/catch` for operations that may fail (e.g., `AudioContext` creation).
+- Use `console.warn` for recoverable failures, `console.error` for actual errors.
+- Guard clauses: early return on invalid state (e.g., `if (!modifier) return;`).
 
-## Environment Variables
-
-- `GEMINI_API_KEY` — injected via Vite `define` as `process.env.GEMINI_API_KEY`
-- `DISABLE_HMR` — set to `'true'` to disable HMR (used in AI Studio)
-- Copy `.env.example` to `.env` for local development
-
-## Key Dependencies
-
-| Package | Purpose |
-|---------|---------|
-| `@react-three/fiber` | React renderer for Three.js |
-| `@react-three/drei` | R3F helpers (Stars, Cloud, Sparkles, PerspectiveCamera) |
-| `@react-three/postprocessing` | Post-processing effects (Bloom, Noise, Vignette) |
-| `zustand` | Lightweight state management |
-| `motion` | Animation library (Framer Motion successor) |
-| `lucide-react` | Icon components |
-| `three` | 3D rendering engine |
-| `@google/genai` | Gemini AI API client |
+### Formatting
+- Semicolons used consistently.
+- Single quotes for strings.
+- Arrow functions for callbacks and store actions.
+- Compact single-line `set()` calls for simple state updates.
+- Section comments with `// ── Name ──` separators in complex components.
