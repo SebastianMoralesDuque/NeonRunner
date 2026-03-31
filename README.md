@@ -23,6 +23,7 @@ Un **endless runner 3D** con estética cyberpunk/synthwave construido con React,
 - **Temas dinámicos**: la paleta de colores del escenario cambia cada 600 puntos entre 10 temas (Cyan/Magenta, Emerald/Gold, Crimson/Orange, Toxic Green, Monochrome…)
 - **Efectos visuales**: screen flash, camera shake, speed lines, explosiones, overlay de scanlines CRT
 - **Audio procedural**: efectos de sonido generados con Web Audio API + Howler (disparo, impacto, power-up, escudo, game over)
+- **Análisis de decisiones con IA (Ollama)**: al finalizar cada partida, un modelo local de Ollama analiza las elecciones de modificadores del jugador y genera un perfil de riesgo con personalidad cyberpunk cínica y burlona
 - **Persistencia local**: high score y últimas elecciones de modificadores guardados en `localStorage`
 - **HUD completo**: puntuación, high score, velocidad, indicador de power-up/escudo, modificador activo con countdown
 - **Controles**: teclado (A/D, flechas), swipe táctil y botones en pantalla para móvil
@@ -37,6 +38,7 @@ Un **endless runner 3D** con estética cyberpunk/synthwave construido con React,
 | Estado | Zustand |
 | UI | Tailwind CSS v4 + Motion (animaciones) + Lucide (iconos) |
 | Audio | Howler + Web Audio API (procedural) |
+| IA | Ollama (API compatible con OpenAI) — modelo `nemotron-3-super:cloud` para análisis de decisiones del jugador |
 | Build | Vite 6 |
 
 ## 🚀 Cómo ejecutar localmente
@@ -68,9 +70,9 @@ npm run lint
 | Pausar | `Esc` / `P` | — |
 | Elegir modificador | `1` / `2` / `3` | Tap en la carta |
 
-## ☁️ Despliegue en CubePath
+## ☁️ Despliegue en CubePath + Ollama
 
-Este proyecto se despliega en **CubePath** aprovechando el build estático de Vite servido a través de Express.
+Este proyecto se despliega en **CubePath** aprovechando el build estático de Vite servido a través de Express, con integración de IA local mediante **Ollama**.
 
 ### Cómo se utilizó CubePath
 
@@ -83,6 +85,22 @@ Este proyecto se despliega en **CubePath** aprovechando el build estático de Vi
 4. **Despliegue**: El repositorio se conecta a CubePath, que detecta el `package.json`, ejecuta `npm install` y `npm run build`, y luego arranca el servidor con `node server.ts`.
 
 5. **Resultado**: La aplicación queda accesible públicamente en una URL de CubePath con HTTPS, lista para ser jugada desde cualquier navegador sin configuración adicional.
+
+### Cómo se utilizó Ollama
+
+Se integró **Ollama** como motor de IA local para generar un análisis personalizado de las decisiones del jugador al finalizar cada partida:
+
+1. **Modelo utilizado**: `nemotron-3-super:cloud` ejecutado a través de la API compatible con OpenAI de Ollama (`http://localhost:11434/v1/chat/completions`).
+
+2. **Funcionamiento**: El componente `DecisionLog.tsx` recopila todas las elecciones de modificadores que el jugador hizo durante la partida (qué cartas eligió, a qué puntuación, qué alternativas descartó) y envía un prompt al modelo de Ollama pidiéndole un perfil de riesgo con personalidad cyberpunk cínica y burlona.
+
+3. **Prompt del sistema**: El modelo actúa como un "supervisor de IA cyberpunk" que analiza si el jugador buscó la adrenalina con desafíos difíciles o eligió el camino fácil ("Nada"), generando un comentario filosófico y burlón sobre su estrategia de juego y valor como piloto.
+
+4. **Formato de respuesta**: Se solicita respuesta en formato JSON (`response_format: { type: 'json_object' }`) con un campo `message` que contiene el análisis, parseado directamente en el componente React.
+
+5. **Fallback y retry**: La función `callAI` en `src/utils/ai.ts` implementa reintentos automáticos (hasta 3) y manejo de errores para garantizar que el análisis se muestre incluso en condiciones de red inestables.
+
+6. **Configuración**: La URL base del modelo se configura mediante `VITE_MODAL_BASE_URL` en el `.env`, con fallback a `http://localhost:11434/v1/`. No requiere API key ya que Ollama corre localmente.
 
 ## 📂 Estructura del proyecto
 
