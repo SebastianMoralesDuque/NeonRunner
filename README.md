@@ -70,9 +70,9 @@ npm run lint
 | Pausar | `Esc` / `P` | — |
 | Elegir modificador | `1` / `2` / `3` | Tap en la carta |
 
-## ☁️ Despliegue en CubePath + Ollama
+## ☁️ Despliegue en CubePath
 
-Este proyecto se despliega en **CubePath** aprovechando el build estático de Vite servido a través de Express, con integración de IA local mediante **Ollama**.
+Este proyecto se despliega en **CubePath** aprovechando el build estático de Vite servido a través de Express, con integración de IA mediante **Ollama**.
 
 ### Cómo se utilizó CubePath
 
@@ -84,23 +84,11 @@ Este proyecto se despliega en **CubePath** aprovechando el build estático de Vi
 
 4. **Despliegue**: El repositorio se conecta a CubePath, que detecta el `package.json`, ejecuta `npm install` y `npm run build`, y luego arranca el servidor con `node server.ts`.
 
-5. **Resultado**: La aplicación queda accesible públicamente en una URL de CubePath con HTTPS, lista para ser jugada desde cualquier navegador sin configuración adicional.
+5. **Resultado**: La aplicación queda accesible públicamente en `http://vps23925.cubepath.net`, lista para ser jugada desde cualquier navegador.
 
 ### Cómo se utilizó Ollama
 
-Se integró **Ollama** como motor de IA local para generar un análisis personalizado de las decisiones del jugador al finalizar cada partida:
-
-1. **Modelo utilizado**: `nemotron-3-super:cloud` ejecutado a través de la API compatible con OpenAI de Ollama (`http://localhost:11434/v1/chat/completions`).
-
-2. **Funcionamiento**: El componente `DecisionLog.tsx` recopila todas las elecciones de modificadores que el jugador hizo durante la partida (qué cartas eligió, a qué puntuación, qué alternativas descartó) y envía un prompt al modelo de Ollama pidiéndole un perfil de riesgo con personalidad cyberpunk cínica y burlona.
-
-3. **Prompt del sistema**: El modelo actúa como un "supervisor de IA cyberpunk" que analiza si el jugador buscó la adrenalina con desafíos difíciles o eligió el camino fácil ("Nada"), generando un comentario filosófico y burlón sobre su estrategia de juego y valor como piloto.
-
-4. **Formato de respuesta**: Se solicita respuesta en formato JSON (`response_format: { type: 'json_object' }`) con un campo `message` que contiene el análisis, parseado directamente en el componente React.
-
-5. **Fallback y retry**: La función `callAI` en `src/utils/ai.ts` implementa reintentos automáticos (hasta 3) y manejo de errores para garantizar que el análisis se muestre incluso en condiciones de red inestables.
-
-6. **Configuración**: La URL base del modelo se configura mediante `VITE_MODAL_BASE_URL` en el `.env`, con fallback a `http://localhost:11434/v1/`. No requiere API key ya que Ollama corre localmente.
+Se integró **Ollama** como motor de IA para analizar las decisiones del jugador al finalizar cada partida. El componente `DecisionLog.tsx` envía un resumen de las elecciones de modificadores a un modelo ejecutado con Ollama (`nemotron-3-super:cloud`) a través de su API compatible con OpenAI. El modelo genera un perfil de riesgo con personalidad cyberpunk que se muestra al jugador. La función `callAI` en `src/utils/ai.ts` maneja la comunicación con reintentos automáticos y la URL base se configura mediante `VITE_MODAL_BASE_URL` en el `.env`.
 
 ## 📂 Estructura del proyecto
 
