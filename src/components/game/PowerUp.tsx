@@ -15,6 +15,7 @@ export const PowerUpSystem = () => {
   const status = useGameStore((s) => s.status);
   const speed = useGameStore((s) => s.speed);
   const powerUps = useGameStore((s) => s.powerUps);
+  const obstacles = useGameStore((s) => s.obstacles);
   const addPowerUp = useGameStore((s) => s.addPowerUp);
   const removePowerUp = useGameStore((s) => s.removePowerUp);
   const collectPowerUp = useGameStore((s) => s.collectPowerUp);
@@ -46,11 +47,21 @@ export const PowerUpSystem = () => {
     }
 
     if (elapsed - lastSpawnTime.current > POWERUP_SPAWN_INTERVAL) {
-      const lane = Math.floor(Math.random() * NUM_LANES);
-      const id = Math.random().toString(36).substr(2, 9);
-      const type = Math.random() > 0.5 ? 'weapon' : 'shield';
-      addPowerUp({ id, lane, z: POWERUP_START_Z, type });
-      powerUpPositions.current.set(id, POWERUP_START_Z);
+      const occupiedLanes = new Set(
+        obstacles
+          .filter((o) => o.z > POWERUP_START_Z - 15)
+          .map((o) => o.lane)
+      );
+      const freeLanes = Array.from({ length: NUM_LANES }, (_, i) => i).filter(
+        (l) => !occupiedLanes.has(l)
+      );
+      if (freeLanes.length > 0) {
+        const lane = freeLanes[Math.floor(Math.random() * freeLanes.length)];
+        const id = Math.random().toString(36).substr(2, 9);
+        const type = Math.random() > 0.5 ? 'weapon' : 'shield';
+        addPowerUp({ id, lane, z: POWERUP_START_Z, type });
+        powerUpPositions.current.set(id, POWERUP_START_Z);
+      }
       lastSpawnTime.current = elapsed;
     }
 

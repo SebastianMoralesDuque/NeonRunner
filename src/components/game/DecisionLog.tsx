@@ -5,6 +5,57 @@ import { callAI } from '../../utils/ai';
 import { CornerBrackets } from './StartScreen';
 import { Brain, AlertCircle, Sparkles, Loader2 } from 'lucide-react';
 
+function sanitizeAIResponse(raw: string): string {
+  let text = raw.trim();
+
+  // Strip markdown code blocks (```json ... ``` or ``` ... ```)
+  const codeBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (codeBlockMatch) {
+    text = codeBlockMatch[1].trim();
+  }
+
+  // Try JSON parse
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed.message && typeof parsed.message === 'string') {
+      return parsed.message.trim();
+    }
+    // Try other common fields
+    if (parsed.response && typeof parsed.response === 'string') {
+      return parsed.response.trim();
+    }
+    if (parsed.text && typeof parsed.text === 'string') {
+      return parsed.text.trim();
+    }
+    // If it's a JSON object but no known field, return empty
+    if (typeof parsed === 'object' && parsed !== null) {
+      const values = Object.values(parsed).filter(v => typeof v === 'string' && v.length > 10);
+      if (values.length > 0) return (values[0] as string).trim();
+    }
+  } catch {
+    // Not JSON at all
+  }
+
+  // Strip any remaining JSON-like fragments or prompt leakage
+  // Remove lines that look like system prompts or API artifacts
+  const lines = text.split('\n').filter(line => {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('"role"') || trimmed.startsWith('"system"') || trimmed.startsWith('"content"')) return false;
+    if (trimmed.startsWith('```') || trimmed.startsWith('---')) return false;
+    if (/^(system|user|assistant)\s*:/i.test(trimmed)) return false;
+    return trimmed.length > 0;
+  });
+
+  const cleaned = lines.join('\n').trim();
+
+  // If nothing useful left, return a generic fallback
+  if (!cleaned || cleaned.length < 5) {
+    return 'El piloto tiene un estilo... interesante. La IA se quedó sin palabras.';
+  }
+
+  return cleaned;
+}
+
 export const DecisionLog = () => {
   const modifierChoices = useGameStore((s) => s.modifierChoices);
   const [analysis, setAnalysis] = useState<string | null>(null);
@@ -35,13 +86,9 @@ export const DecisionLog = () => {
         // Use 'ollama' as apiKey if needed, here we pass null as baseUrl handles it
         const response = await callAI(null, systemPrompt, userMessage, true);
         
-        // Try to parse JSON, fallback if AI doesn't follow instructions perfectly
-        try {
-          const parsed = JSON.parse(response);
-          setAnalysis(parsed.message || response);
-        } catch {
-          setAnalysis(response);
-        }
+        // Robust parsing: handle JSON in code blocks, raw JSON, or extract message field
+        let extracted = sanitizeAIResponse(response);
+        setAnalysis(extracted);
       } catch (err) {
         console.error('AI Analysis Error:', err);
         setError('Failed to sync with neural link.');

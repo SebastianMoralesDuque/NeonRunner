@@ -2,7 +2,7 @@
 import { Bloom, EffectComposer, Noise, Vignette } from '@react-three/postprocessing';
 import { Stars, Sparkles } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
-import { useRef, useMemo, useEffect } from 'react';
+import { useRef, useMemo, useEffect, memo } from 'react';
 import * as THREE from 'three';
 import { useGameStore, THEMES } from '../../store/gameStore';
 

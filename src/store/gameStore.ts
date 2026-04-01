@@ -49,31 +49,35 @@ export const MODIFIERS: Modifier[] = [
 ];
 
 let recentModifierIds: string[] = [];
+let seenModifierIds: Set<string> = new Set();
 
-function pickModifiersForScore(score: number): Modifier[] {
+function pickModifiersForScore(_score: number): Modifier[] {
   const nada = MODIFIERS[0];
-  const maxDifficulty = Math.max(10 - Math.floor(score / 300), 3);
+  const allOthers = MODIFIERS.slice(1);
 
-  const eligible = MODIFIERS.slice(1).filter((m) => m.difficulty <= maxDifficulty);
-  if (eligible.length < 2) {
-    const allOthers = MODIFIERS.slice(1);
-    return [allOthers[0], allOthers[1], nada];
-  }
-
-  const pool = eligible.filter((m) => !recentModifierIds.includes(m.id));
+  const unseen = allOthers.filter((m) => !seenModifierIds.has(m.id));
+  const notRecent = allOthers.filter((m) => !recentModifierIds.includes(m.id));
 
   let picks: Modifier[];
-  if (pool.length >= 2) {
-    const shuffled = [...pool].sort(() => Math.random() - 0.5);
+  if (unseen.length >= 2) {
+    const shuffled = [...unseen].sort(() => Math.random() - 0.5);
     picks = [shuffled[0], shuffled[1]];
+  } else if (unseen.length === 1) {
+    const shuffled = [...notRecent].sort(() => Math.random() - 0.5);
+    picks = [unseen[0], shuffled[0]];
   } else {
-    const shuffled = [...eligible].sort(() => Math.random() - 0.5);
-    picks = [shuffled[0], shuffled[1]];
+    const shuffled = [...notRecent].sort(() => Math.random() - 0.5);
+    if (shuffled.length >= 2) {
+      picks = [shuffled[0], shuffled[1]];
+    } else {
+      picks = [...allOthers].sort(() => Math.random() - 0.5).slice(0, 2);
+    }
   }
 
   for (const p of picks) {
+    seenModifierIds.add(p.id);
     recentModifierIds.push(p.id);
-    if (recentModifierIds.length > 6) {
+    if (recentModifierIds.length > 4) {
       recentModifierIds.shift();
     }
   }
@@ -174,6 +178,8 @@ export const useGameStore = create<GameState>((set) => ({
     if (applyCountdownTimer) { clearInterval(applyCountdownTimer); applyCountdownTimer = null; }
     if (modifierTimerInterval) { clearInterval(modifierTimerInterval); modifierTimerInterval = null; }
     if (selectionTimerInterval) { clearInterval(selectionTimerInterval); selectionTimerInterval = null; }
+    recentModifierIds = [];
+    seenModifierIds = new Set();
     set({
       status: 'START',
       score: 0,

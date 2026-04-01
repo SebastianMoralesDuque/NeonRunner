@@ -4,45 +4,65 @@ import { useGameStore } from '../store/gameStore';
 import { setSFXMasterVolume } from '../audio/sfx';
 
 let howlInstance: Howl | null = null;
-let startedFlag = false;
 
 export const useAudio = () => {
   const status = useGameStore((s) => s.status);
   const volume = useGameStore((s) => s.volume);
+  const isPausedRef = useRef(false);
 
-  const stopMusic = useCallback(() => {
+  const destroyMusic = useCallback(() => {
     if (howlInstance) {
       howlInstance.stop();
       howlInstance.unload();
       howlInstance = null;
     }
-    startedFlag = false;
+    isPausedRef.current = false;
+  }, []);
+
+  const stopMusic = useCallback(() => {
+    if (howlInstance) {
+      howlInstance.pause();
+      isPausedRef.current = true;
+    }
+  }, []);
+
+  const resumeMusic = useCallback(() => {
+    if (howlInstance && isPausedRef.current) {
+      howlInstance.play();
+      isPausedRef.current = false;
+    }
   }, []);
 
   const startMusic = useCallback(() => {
     if (howlInstance) {
-      if (!howlInstance.playing()) howlInstance.play();
+      if (!howlInstance.playing()) {
+        howlInstance.play();
+      }
+      isPausedRef.current = false;
       return;
     }
 
-    startedFlag = true;
     const howl = new Howl({
       src: ['/music/game-music.ogg'],
       loop: true,
       volume: volume * 0.5,
-      html5: true,
-      onloaderror: (id, error) => {
-        console.error("Audio Load Error:", id, error);
-        startedFlag = false;
+      html5: false,
+      onloaderror: (_id, error) => {
+        console.error("Audio Load Error:", error);
+        howlInstance = null;
       },
-      onplayerror: (id, error) => {
-        console.error("Audio Play Error:", id, error);
+      onplayerror: (_id, error) => {
+        console.error("Audio Play Error:", error);
         howl.once('unlock', () => howl.play());
+      },
+      onend: () => {
+        isPausedRef.current = false;
       },
     });
 
     howl.play();
     howlInstance = howl;
+    isPausedRef.current = false;
   }, [volume]);
 
   useEffect(() => {
@@ -50,9 +70,9 @@ export const useAudio = () => {
     if (shouldPlay) {
       startMusic();
     } else {
-      stopMusic();
+      destroyMusic();
     }
-  }, [status, startMusic, stopMusic]);
+  }, [status, startMusic, destroyMusic]);
 
   useEffect(() => {
     if (howlInstance) {
@@ -64,14 +84,16 @@ export const useAudio = () => {
     const handleVisibility = () => {
       if (document.hidden && howlInstance) {
         howlInstance.pause();
-      } else if (!document.hidden && howlInstance && (status === 'PLAYING' || status === 'START')) {
+        isPausedRef.current = true;
+      } else if (!document.hidden && howlInstance && isPausedRef.current) {
         howlInstance.play();
+        isPausedRef.current = false;
       }
     };
 
     document.addEventListener('visibilitychange', handleVisibility);
     return () => document.removeEventListener('visibilitychange', handleVisibility);
-  }, [status]);
+  }, []);
 
   return {
     setVolume: (vol: number) => {
@@ -82,5 +104,6 @@ export const useAudio = () => {
     },
     play: startMusic,
     stop: stopMusic,
+    resume: resumeMusic,
   };
 };

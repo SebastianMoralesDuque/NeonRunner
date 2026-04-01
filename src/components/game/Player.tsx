@@ -1,12 +1,15 @@
 import { useFrame } from '@react-three/fiber';
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, memo, useMemo } from 'react';
 import * as THREE from 'three';
-import { useGameStore, THEMES, laneX } from '../../store/gameStore';
+import { useGameStore, THEMES, laneX, LANE_WIDTH, NUM_LANES } from '../../store/gameStore';
 
 const DOUBLE_TAP_WINDOW = 300;
 const DELAY_INPUT_MS = 400;
 
-export const Player = () => {
+const hullMat = { color: '#0e1014', metalness: 0.96, roughness: 0.28 } as const;
+const plateMat = { color: '#090b0f', metalness: 1.0, roughness: 0.15 } as const;
+
+export const Player = memo(() => {
   const meshRef = useRef<THREE.Group>(null);
 
   // Engine nozzles — each with its own ref for independent pulse frequency
@@ -51,7 +54,7 @@ export const Player = () => {
   const isInvisible = activeModifierId === 'invisible';
   const theme = THEMES[themeIndex];
 
-  const targetX = laneX(lane);
+  const targetX = laneX(lane) + (lane === 0 ? -LANE_WIDTH * 0.3 : lane === NUM_LANES - 1 ? LANE_WIDTH * 0.3 : 0);
 
   // ── Animation loop ─────────────────────────────────────────────
   useFrame(({ clock }, delta) => {
@@ -235,7 +238,7 @@ export const Player = () => {
   const plateMat = { color: '#090b0f', metalness: 1.0, roughness: 0.15 } as const;
 
   return (
-    <group ref={meshRef} position={[0, 0.6, 0]} visible={!isInvisible}>
+    <group ref={meshRef} position={[0, 0.6, -2]} visible={!isInvisible}>
 
       {/* ═══════════════════════════════════════════
           MAIN HULL BODY
@@ -583,4 +586,6 @@ export const Player = () => {
       )}
     </group>
   );
-};
+});
+
+Player.displayName = 'Player';

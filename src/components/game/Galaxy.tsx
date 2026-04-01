@@ -1,4 +1,4 @@
-import { useRef, useMemo } from 'react';
+import { useRef, useMemo, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useGameStore, THEMES } from '../../store/gameStore';
@@ -47,10 +47,10 @@ const fragmentShader = /* glsl */ `
 
 export const Galaxy = () => {
   const pointsRef = useRef<THREE.Points>(null);
-  const { themeIndex } = useGameStore();
+  const themeIndex = useGameStore((s) => s.themeIndex);
   const theme = THEMES[themeIndex];
 
-  const { geometry, uniforms } = useMemo(() => {
+  const { geometry, uniforms, colorBuffer } = useMemo(() => {
     const count = 60000;
     const radius = 60;
     const branches = 5;
@@ -62,9 +62,6 @@ export const Galaxy = () => {
     const colors = new Float32Array(count * 3);
     const scales = new Float32Array(count);
     const randomnessArr = new Float32Array(count * 3);
-
-    const insideColor = new THREE.Color(theme.primary);
-    const outsideColor = new THREE.Color(theme.nebula[0]);
 
     for (let i = 0; i < count; i++) {
       const i3 = i * 3;
@@ -79,10 +76,9 @@ export const Galaxy = () => {
       randomnessArr[i3 + 1] = (Math.random() - 0.5) * randomness * r * 0.5;
       randomnessArr[i3 + 2] = (Math.random() - 0.5) * randomness * r * 2;
 
-      const mixedColor = insideColor.clone().lerp(outsideColor, r / radius);
-      colors[i3] = mixedColor.r;
-      colors[i3 + 1] = mixedColor.g;
-      colors[i3 + 2] = mixedColor.b;
+      colors[i3] = 1;
+      colors[i3 + 1] = 1;
+      colors[i3 + 2] = 1;
 
       scales[i] = Math.pow(1.0 - r / radius, 1.5) * 0.8 + 0.2;
     }
@@ -98,8 +94,29 @@ export const Galaxy = () => {
         uTime: { value: 0 },
         uSize: { value: 35 },
       },
+      colorBuffer: colors,
+      count,
+      radius,
     };
-  }, [theme.primary, theme.nebula]);
+  }, []);
+
+  useEffect(() => {
+    const insideColor = new THREE.Color(theme.primary);
+    const outsideColor = new THREE.Color(theme.nebula[0]);
+
+    for (let i = 0; i < 60000; i++) {
+      const i3 = i * 3;
+      const pos = geometry.attributes.position.array as Float32Array;
+      const r = Math.sqrt(pos[i3] * pos[i3] + pos[i3 + 2] * pos[i3 + 2]);
+      const ratio = Math.min(r / 60, 1);
+
+      colorBuffer[i3] = insideColor.r + (outsideColor.r - insideColor.r) * ratio;
+      colorBuffer[i3 + 1] = insideColor.g + (outsideColor.g - insideColor.g) * ratio;
+      colorBuffer[i3 + 2] = insideColor.b + (outsideColor.b - insideColor.b) * ratio;
+    }
+
+    geometry.attributes.color.needsUpdate = true;
+  }, [themeIndex, theme.primary, theme.nebula]);
 
   useFrame((state) => {
     if (pointsRef.current) {

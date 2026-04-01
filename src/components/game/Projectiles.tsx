@@ -1,5 +1,5 @@
 
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, memo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useGameStore, THEMES, laneX } from '../../store/gameStore';
@@ -100,7 +100,7 @@ export const Projectiles = () => {
   );
 };
 
-const ProjectileMesh = ({ data }: { data: ProjectileData }) => {
+const ProjectileMesh = memo(({ data }: { data: ProjectileData }) => {
   const meshRef = useRef<THREE.Group>(null);
   const themeIndex = useGameStore((s) => s.themeIndex);
   const theme = THEMES[themeIndex];
@@ -128,4 +128,6 @@ const ProjectileMesh = ({ data }: { data: ProjectileData }) => {
       </mesh>
     </group>
   );
-};
+});
+
+ProjectileMesh.displayName = 'ProjectileMesh';

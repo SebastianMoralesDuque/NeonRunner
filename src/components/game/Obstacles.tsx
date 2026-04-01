@@ -7,12 +7,13 @@ import { ObstacleData } from '../../types';
 import { playHit } from '../../audio/sfx';
 import { triggerExplosionAt } from './Explosions';
 
-const OBSTACLE_SPAWN_INTERVAL = 1.25;
+const OBSTACLE_SPAWN_INTERVAL = 0.95;
 const OBSTACLE_START_Z = -100;
 const OBSTACLE_END_Z = 20;
-const COLLISION_THRESHOLD_Z = 0.5;
+const COLLISION_THRESHOLD_Z = 1.2;
 const COLLISION_THRESHOLD_X = 1.0;
 const SPAWN_SPAWN_PROTECT_Z = 15;
+const PLAYER_Z = -2;
 
 export const Obstacles = () => {
   const status = useGameStore((s) => s.status);
@@ -50,7 +51,7 @@ export const Obstacles = () => {
     const safeDelta = Math.min(delta, 0.1);
     const elapsed = state.clock.elapsedTime;
     const isSpeedBoost = activeModifierId === 'speed_boost';
-    const moveSpeed = speed * 100 * safeDelta * (isSpeedBoost ? 2 : 1);
+    const moveSpeed = speed * 80 * safeDelta * (isSpeedBoost ? 2 : 1);
 
     const spawnRate = Math.max(speed, 0.1);
     if (elapsed - lastSpawnTime.current > OBSTACLE_SPAWN_INTERVAL / spawnRate) {
@@ -80,11 +81,17 @@ export const Obstacles = () => {
 
     for (let i = 0; i < obstacles.length; i++) {
       const obstacle = obstacles[i];
+      const prevZ = obstacle.z;
       const newZ = obstacle.z + moveSpeed;
       obstacle.z = newZ;
       const obstacleX = laneX(obstacle.lane);
 
-      if (Math.abs(newZ) < COLLISION_THRESHOLD_Z && Math.abs(playerX - obstacleX) < COLLISION_THRESHOLD_X) {
+      const prevDist = Math.abs(prevZ - PLAYER_Z);
+      const newDist = Math.abs(newZ - PLAYER_Z);
+      const crossedPlayer = (prevZ - PLAYER_Z) * (newZ - PLAYER_Z) <= 0;
+      const inLane = Math.abs(playerX - obstacleX) < COLLISION_THRESHOLD_X;
+
+      if ((newDist < COLLISION_THRESHOLD_Z || crossedPlayer) && inLane) {
         if (hasShield) {
           toRemove.push(obstacle.id);
           scoredCount++;
