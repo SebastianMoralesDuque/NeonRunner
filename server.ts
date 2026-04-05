@@ -14,9 +14,10 @@ app.use(express.json());
 app.all('/api/ollama/*', async (req, res) => {
   console.log('Ollama proxy:', req.method, req.path, '-> OLLAMA_HOST:', process.env.OLLAMA_HOST);
   try {
-    const targetPath = req.path.replace(/^\/api\/ollama\/?/, '/v1/');
+    const targetPath = req.path.replace(/^\/api\/ollama/, '/v1');
     const ollamaHost = process.env.OLLAMA_HOST || '10.0.0.188';
-    const url = `http://${ollamaHost}:11434${targetPath}${req.url.includes('?') ? req.url.split('?').slice(1).join('?') : ''}`;
+    const queryString = req.url.includes('?') ? '?' + req.url.split('?')[1] : '';
+    const url = `http://${ollamaHost}:11434${targetPath}${queryString}`;
     
     const response = await fetch(url, {
       method: req.method,
