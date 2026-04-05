@@ -12,6 +12,12 @@ services:
     networks:
       - coolify
       - app_net
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.neonrunner.rule=Host(`neonrunner.sebastianmorales.sbs`)"
+      - "traefik.http.routers.neonrunner.entryPoints=http,https"
+      - "traefik.http.routers.neonrunner.tls=true"
+      - "traefik.http.services.neonrunner.loadbalancer.server.port=3000"
     restart: unless-stopped
 
 networks:
