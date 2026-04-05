@@ -8,7 +8,9 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(express.json());
+app.use(express.json({ verify: (req, res, buf) => {
+  (req as any).rawBody = buf;
+} }));
 
 // Debug: log all requests
 app.use((req, res, next) => {
@@ -33,7 +35,7 @@ app.use('/api/ollama', async (req, res) => {
         'Content-Type': 'application/json',
         ...Object.fromEntries(Object.entries(req.headers).filter(([k]) => k !== 'host' && k !== 'connection' && k !== 'content-length')),
       },
-      body: req.method !== 'GET' && req.method !== 'HEAD' ? JSON.stringify(req.body) : undefined,
+      body: req.method !== 'GET' && req.method !== 'HEAD' ? (req as any).rawBody || JSON.stringify(req.body) : undefined,
     });
 
     const data = await response.text();
