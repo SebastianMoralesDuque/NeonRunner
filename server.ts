@@ -23,7 +23,7 @@ app.use((req, res, next) => {
 // Proxy /api/ollama/* to localhost:11434/v1/* - MUST be before static files
 app.use('/api/ollama', async (req, res) => {
   try {
-    const targetPath = req.path.replace(/^\/api\/ollama/, '/v1');
+    const targetPath = req.originalUrl.replace(/^\/api\/ollama/, '/v1');
     const ollamaHost = process.env.OLLAMA_HOST || '10.0.0.188';
     const queryString = req.url.includes('?') ? '?' + req.url.split('?')[1] : '';
     const url = `http://${ollamaHost}:11434${targetPath}${queryString}`;
