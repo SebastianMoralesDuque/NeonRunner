@@ -10,11 +10,11 @@ const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 
-// Proxy /api/ollama/* to localhost:11434/v1/*
+// Proxy /api/ollama/* to localhost:11434/v1/* - MUST be before static files
 app.all('/api/ollama/*', async (req, res) => {
   try {
     const targetPath = req.path.replace(/^\/api\/ollama\/?/, '/v1/');
-    const ollamaHost = process.env.OLLAMA_HOST || '10.0.2.1';
+    const ollamaHost = process.env.OLLAMA_HOST || '10.0.0.188';
     const url = `http://${ollamaHost}:11434${targetPath}${req.url.includes('?') ? req.url.split('?').slice(1).join('?') : ''}`;
     
     const response = await fetch(url, {
