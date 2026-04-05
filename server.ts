@@ -14,7 +14,7 @@ app.use(express.json());
 app.all('/api/ollama/*', async (req, res) => {
   try {
     const targetPath = req.path.replace(/^\/api\/ollama/, '/v1');
-    const ollamaHost = process.env.OLLAMA_HOST || 'host.docker.internal';
+    const ollamaHost = process.env.OLLAMA_HOST || '10.0.2.1';
     const url = `http://${ollamaHost}:11434${targetPath}${req.url.includes('?') ? req.url.split('?').slice(1).join('?') : ''}`;
     
     const response = await fetch(url, {
