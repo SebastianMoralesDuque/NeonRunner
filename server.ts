@@ -12,6 +12,17 @@ app.use(express.json({ verify: (req, res, buf) => {
   (req as any).rawBody = buf;
 } }));
 
+// CORS headers
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+  next();
+});
+
 // Debug: log all requests
 app.use((req, res, next) => {
   if (req.path.startsWith('/api')) {
