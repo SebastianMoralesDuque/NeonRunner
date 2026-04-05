@@ -42,7 +42,7 @@ export async function callAI(
     isJSON = false,
     modelOverride: string | null = null
 ): Promise<string> {
-    const baseUrl = import.meta.env.VITE_MODAL_BASE_URL || 'http://localhost:11434/v1/';
+    const baseUrl = import.meta.env.VITE_MODAL_BASE_URL || '/api/ollama/';
     const model = modelOverride || import.meta.env.VITE_MODAL_MODEL || 'nemotron-3-super:cloud';
     const url = `${baseUrl.endsWith('/') ? baseUrl : baseUrl + '/'}chat/completions`;
 
