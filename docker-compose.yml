@@ -6,9 +6,7 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - OLLAMA_HOST=10.0.2.1
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - OLLAMA_API_KEY=${OLLAMA_API_KEY}
     networks:
       - coolify
       - app_net
