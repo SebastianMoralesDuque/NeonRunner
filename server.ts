@@ -1,6 +1,7 @@
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import Ollama from 'ollama';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -12,7 +13,6 @@ app.use(express.json({ verify: (req, res, buf) => {
   (req as any).rawBody = buf;
 } }));
 
-// CORS headers
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -23,7 +23,6 @@ app.use((req, res, next) => {
   next();
 });
 
-// Debug: log all requests
 app.use((req, res, next) => {
   if (req.path.startsWith('/api')) {
     console.log('Request:', req.method, req.path);
@@ -31,43 +30,67 @@ app.use((req, res, next) => {
   next();
 });
 
-// Proxy /api/ollama/* to Ollama Cloud API - MUST be before static files
-app.use('/api/ollama', async (req, res) => {
+const ollamaClient = new Ollama({
+  host: 'https://ollama.com',
+  headers: {
+    Authorization: 'Bearer ' + (process.env.OLLAMA_API_KEY || ''),
+  },
+});
+
+app.post('/api/ollama/chat/completions', async (req, res) => {
   try {
     const ollamaApiKey = process.env.OLLAMA_API_KEY;
     if (!ollamaApiKey) {
       res.status(500).json({ error: 'OLLAMA_API_KEY not configured' });
       return;
     }
-    
-    const targetPath = req.originalUrl.replace(/^\/api\/ollama/, '/api');
-    const queryString = req.url.includes('?') ? '?' + req.url.split('?')[1] : '';
-    const url = `https://ollama.com${targetPath}${queryString}`;
-    console.log('Ollama Cloud proxy:', req.method, req.originalUrl, '-> URL:', url);
-    console.log('Body:', (req as any).rawBody ? (req as any).rawBody.toString() : 'none');
-    
-    const response = await fetch(url, {
-      method: req.method,
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${ollamaApiKey}`,
-        ...Object.fromEntries(Object.entries(req.headers).filter(([k]) => k !== 'host' && k !== 'connection' && k !== 'content-length')),
-      },
-      body: req.method !== 'GET' && req.method !== 'HEAD' ? (req as any).rawBody || JSON.stringify(req.body) : undefined,
+
+    const { model, messages, stream = false, ...rest } = req.body;
+    console.log('Ollama Cloud request:', { model, stream });
+
+    const response = await ollamaClient.chat({
+      model: model || 'nemotron-3-super:cloud',
+      messages: messages as { role: string; content: string }[],
+      stream,
+      ...rest,
     });
 
-    const data = await response.text();
-    res.status(response.status).set('Content-Type', response.headers.get('Content-Type') || 'application/json').send(data);
+    if (stream) {
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+
+      const streamResponse = await ollamaClient.chat({
+        model: model || 'nemotron-3-super:cloud',
+        messages: messages as { role: string; content: string }[],
+        stream: true,
+        ...rest,
+      });
+
+      for await (const part of streamResponse) {
+        const openAIPart = {
+          choices: [{ delta: { content: part.message.content }, index: 0 }],
+          model,
+        };
+        res.write(`data: ${JSON.stringify(openAIPart)}\n\n`);
+      }
+      res.write('data: [DONE]\n\n');
+      res.end();
+    } else {
+      const openAIResponse = {
+        choices: [{ message: { role: 'assistant', content: response.message.content } }],
+        model,
+      };
+      res.json(openAIResponse);
+    }
   } catch (err: any) {
-    console.error('Ollama Cloud proxy error:', err.message);
+    console.error('Ollama Cloud error:', err.message);
     res.status(502).json({ error: 'Failed to reach Ollama Cloud', details: err.message });
   }
 });
 
-// Serve static files from dist
 app.use(express.static(path.join(__dirname, 'dist')));
 
-// Catch-all: serve index.html for SPA routing
 app.get('*', (_req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
