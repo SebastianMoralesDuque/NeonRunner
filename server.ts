@@ -1,7 +1,6 @@
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import Ollama from 'ollama';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -30,17 +29,12 @@ app.use((req, res, next) => {
   next();
 });
 
-const ollamaClient = new Ollama({
-  host: 'https://ollama.com',
-  headers: {
-    Authorization: 'Bearer ' + (process.env.OLLAMA_API_KEY || ''),
-  },
-});
+const OLLAMA_API_KEY = process.env.OLLAMA_API_KEY;
+const OLLAMA_HOST = 'https://ollama.com';
 
 app.post('/api/ollama/chat/completions', async (req, res) => {
   try {
-    const ollamaApiKey = process.env.OLLAMA_API_KEY;
-    if (!ollamaApiKey) {
+    if (!OLLAMA_API_KEY) {
       res.status(500).json({ error: 'OLLAMA_API_KEY not configured' });
       return;
     }
@@ -48,39 +42,72 @@ app.post('/api/ollama/chat/completions', async (req, res) => {
     const { model, messages, stream = false, ...rest } = req.body;
     console.log('Ollama Cloud request:', { model, stream });
 
-    const response = await ollamaClient.chat({
-      model: model || 'nemotron-3-super:cloud',
-      messages: messages as { role: string; content: string }[],
-      stream,
-      ...rest,
-    });
-
     if (stream) {
       res.setHeader('Content-Type', 'text/event-stream');
       res.setHeader('Cache-Control', 'no-cache');
       res.setHeader('Connection', 'keep-alive');
 
-      const streamResponse = await ollamaClient.chat({
-        model: model || 'nemotron-3-super:cloud',
-        messages: messages as { role: string; content: string }[],
-        stream: true,
-        ...rest,
+      const response = await fetch(`${OLLAMA_HOST}/api/chat`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${OLLAMA_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: model || 'nemotron-3-super:cloud',
+          messages,
+          stream: true,
+          ...rest,
+        }),
       });
 
-      for await (const part of streamResponse) {
-        const openAIPart = {
-          choices: [{ delta: { content: part.message.content }, index: 0 }],
-          model,
-        };
-        res.write(`data: ${JSON.stringify(openAIPart)}\n\n`);
+      if (!response.ok) {
+        const error = await response.text();
+        console.error('Ollama API error:', response.status, error);
+        res.status(response.status).json({ error: 'Ollama API error', details: error });
+        return;
       }
-      res.write('data: [DONE]\n\n');
-      res.end();
+
+      response.body?.pipe(res);
     } else {
+      const response = await fetch(`${OLLAMA_HOST}/api/chat`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${OLLAMA_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: model || 'nemotron-3-super:cloud',
+          messages,
+          stream: false,
+          ...rest,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        console.error('Ollama API error:', response.status, error);
+        res.status(response.status).json({ error: 'Ollama API error', details: error });
+        return;
+      }
+
+      const data = await response.json();
+
       const openAIResponse = {
-        choices: [{ message: { role: 'assistant', content: response.message.content } }],
-        model,
+        id: 'ollama-' + Date.now(),
+        object: 'chat.completion',
+        created: Math.floor(Date.now() / 1000),
+        model: model || 'nemotron-3-super:cloud',
+        choices: [{
+          index: 0,
+          message: {
+            role: 'assistant',
+            content: data.message?.content || '',
+          },
+          finish_reason: 'stop',
+        }],
       };
+
       res.json(openAIResponse);
     }
   } catch (err: any) {
