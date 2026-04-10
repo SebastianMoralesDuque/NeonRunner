@@ -1,5 +1,6 @@
 import express from 'express';
 import path from 'path';
+import { Readable } from 'stream';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -68,7 +69,11 @@ app.post('/api/ollama/chat/completions', async (req, res) => {
         return;
       }
 
-      response.body?.pipe(res);
+      if (response.body) {
+        Readable.fromWeb(response.body as any).pipe(res);
+      } else {
+        res.end();
+      }
     } else {
       const response = await fetch(`${OLLAMA_HOST}/api/chat`, {
         method: 'POST',
