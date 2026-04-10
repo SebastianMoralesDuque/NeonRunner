@@ -2,8 +2,6 @@
 
 Un **endless runner 3D** con estética cyberpunk/synthwave construido con React, Three.js y Zustand. Esquiva obstáculos, recoge power-ups y elige modificadores de dificultad en tiempo real mientras la velocidad y el entorno evolucionan sin parar.
 
-> **Demo en vivo:** http://vps23925.cubepath.net
-
 ## 📸 Capturas de Pantalla
 
 | Pantalla Principal | Gameplay |
@@ -70,26 +68,6 @@ npm run lint
 | Pausar | `Esc` / `P` | — |
 | Elegir modificador | `1` / `2` / `3` | Tap en la carta |
 
-## ☁️ Despliegue en CubePath
-
-Este proyecto se despliega en **CubePath** aprovechando el build estático de Vite servido a través de Express, con integración de IA mediante **Ollama**.
-
-### Cómo se utilizó CubePath
-
-1. **Registro**: Se creó una cuenta en [CubePath](https://midu.link/cubepath) obteniendo $15 de crédito gratuito, suficiente para levantar un servidor nano sin necesidad de tarjeta de crédito.
-
-2. **Build de producción**: Se ejecuta `npm run build` para generar la carpeta `dist/` con todos los assets optimizados (JS, CSS, imágenes).
-
-3. **Servidor Express**: Se incluye un `server.ts` que sirve los archivos estáticos generados por Vite, permitiendo que CubePath despliegue la aplicación como un servicio Node.js.
-
-4. **Despliegue**: El repositorio se conecta a CubePath, que detecta el `package.json`, ejecuta `npm install` y `npm run build`, y luego arranca el servidor con `node server.ts`.
-
-5. **Resultado**: La aplicación queda accesible públicamente en `http://vps23925.cubepath.net`, lista para ser jugada desde cualquier navegador.
-
-### Cómo se utilizó Ollama
-
-Se integró **Ollama** como motor de IA para analizar las decisiones del jugador al finalizar cada partida. El componente `DecisionLog.tsx` envía un resumen de las elecciones de modificadores a un modelo ejecutado con Ollama (`nemotron-3-super:cloud`) a través de su API compatible con OpenAI. El modelo genera un perfil de riesgo con personalidad cyberpunk que se muestra al jugador. La función `callAI` en `src/utils/ai.ts` maneja la comunicación con reintentos automáticos y la URL base se configura mediante `VITE_MODAL_BASE_URL` en el `.env`.
-
 ## 📂 Estructura del proyecto
 
 ```
@@ -124,12 +102,7 @@ src/
 
 ## 📜 Cumplimiento de reglas de la Hackatón
 
-- ✅ Desplegado en CubePath
 - ✅ Proyecto nuevo (sin usuarios reales previos)
 - ✅ Repositorio público con demo accesible
-- ✅ Documentación completa: descripción, enlace a demo, capturas de pantalla y explicación de CubePath
+- ✅ Documentación completa: descripción, capturas de pantalla
 - ✅ Proyecto funcional al momento de la revisión
-
----
-
-*Hecho para la Hackatón CubePath 2026*
