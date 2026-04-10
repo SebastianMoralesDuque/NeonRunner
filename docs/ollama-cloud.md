@@ -125,10 +125,19 @@ Browser ──▶ Express ──▶ https://ollama.com/api/chat
 ### "OLLAMA_API_KEY not configured"
 The environment variable is not set in Coolify. Add `OLLAMA_API_KEY` to your project's environment variables.
 
-### "Failed to reach Ollama Cloud"
-- Check internet connectivity from the server
-- Verify `OLLAMA_API_KEY` is correct
-- Check Ollama Cloud status at https://status.ollama.com
+### "Failed to reach Ollama Cloud" / `response.body?.pipe is not a function`
+- **Node 22 streaming bug**: `fetch()` returns a web `ReadableStream` that does not support `.pipe()` directly with Express. Use `Readable.fromWeb()` instead:
+  ```typescript
+  import { Readable } from 'stream';
+  // ❌ Broken in Node 22
+  response.body?.pipe(res);
+  // ✅ Fixed
+  Readable.fromWeb(response.body as any).pipe(res);
+  ```
+- If the error message is a generic "Failed to reach Ollama Cloud", also check:
+  - Internet connectivity from the server
+  - `OLLAMA_API_KEY` is correct
+  - Ollama Cloud status at https://status.ollama.com
 
 ### Container restarting
 Check logs in Coolify dashboard or via:
