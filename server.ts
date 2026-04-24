@@ -32,6 +32,7 @@ app.use((req, res, next) => {
 
 const OLLAMA_API_KEY = process.env.OLLAMA_API_KEY;
 const OLLAMA_HOST = 'https://ollama.com';
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'nemotron-3-super:cloud';
 
 app.post('/api/ollama/chat/completions', async (req, res) => {
   try {
@@ -55,7 +56,7 @@ app.post('/api/ollama/chat/completions', async (req, res) => {
           'Authorization': `Bearer ${OLLAMA_API_KEY}`,
         },
         body: JSON.stringify({
-          model: model || 'nemotron-3-super:cloud',
+          model: model || OLLAMA_MODEL,
           messages,
           stream: true,
           ...rest,
@@ -82,7 +83,7 @@ app.post('/api/ollama/chat/completions', async (req, res) => {
           'Authorization': `Bearer ${OLLAMA_API_KEY}`,
         },
         body: JSON.stringify({
-          model: model || 'nemotron-3-super:cloud',
+          model: model || OLLAMA_MODEL,
           messages,
           stream: false,
           ...rest,
@@ -102,7 +103,7 @@ app.post('/api/ollama/chat/completions', async (req, res) => {
         id: 'ollama-' + Date.now(),
         object: 'chat.completion',
         created: Math.floor(Date.now() / 1000),
-        model: model || 'nemotron-3-super:cloud',
+        model: model || OLLAMA_MODEL,
         choices: [{
           index: 0,
           message: {
