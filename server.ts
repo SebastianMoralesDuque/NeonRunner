@@ -30,19 +30,13 @@ app.use((req, res, next) => {
   next();
 });
 
-const OLLAMA_API_KEY = process.env.OLLAMA_API_KEY;
-const OLLAMA_HOST = 'https://ollama.com';
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'nemotron-3-super:cloud';
+const OLLAMA_HOST = process.env.OLLAMA_HOST || 'http://10.0.2.1:11434';
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'granite4.1:3b';
 
 app.post('/api/ollama/chat/completions', async (req, res) => {
   try {
-    if (!OLLAMA_API_KEY) {
-      res.status(500).json({ error: 'OLLAMA_API_KEY not configured' });
-      return;
-    }
-
     const { model, messages, stream = false, ...rest } = req.body;
-    console.log('Ollama Cloud request:', { model, stream });
+    console.log('Ollama request:', { model: model || OLLAMA_MODEL, stream });
 
     if (stream) {
       res.setHeader('Content-Type', 'text/event-stream');
@@ -53,7 +47,6 @@ app.post('/api/ollama/chat/completions', async (req, res) => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${OLLAMA_API_KEY}`,
         },
         body: JSON.stringify({
           model: model || OLLAMA_MODEL,
@@ -80,7 +73,6 @@ app.post('/api/ollama/chat/completions', async (req, res) => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${OLLAMA_API_KEY}`,
         },
         body: JSON.stringify({
           model: model || OLLAMA_MODEL,
@@ -117,8 +109,8 @@ app.post('/api/ollama/chat/completions', async (req, res) => {
       res.json(openAIResponse);
     }
   } catch (err: any) {
-    console.error('Ollama Cloud error:', err.message);
-    res.status(502).json({ error: 'Failed to reach Ollama Cloud', details: err.message });
+    console.error('Ollama error:', err.message);
+    res.status(502).json({ error: 'Failed to reach Ollama', details: err.message });
   }
 });
 

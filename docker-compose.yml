@@ -4,8 +4,8 @@ services:
       context: .
       dockerfile: Dockerfile
     environment:
-      - OLLAMA_API_KEY=${OLLAMA_API_KEY}
-      - OLLAMA_MODEL=${OLLAMA_MODEL:-nemotron-3-super:cloud}
+      - OLLAMA_HOST=http://10.0.2.1:11434
+      - OLLAMA_MODEL=granite4.1:3b
     networks:
       - coolify
     labels:
