@@ -3,26 +3,21 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    ports:
-      - "3000:3000"
     environment:
       - OLLAMA_API_KEY=${OLLAMA_API_KEY}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-nemotron-3-super:cloud}
     networks:
       - coolify
-      - app_net
     labels:
       - "traefik.enable=true"
+      - "traefik.docker.network=coolify"
       - "traefik.http.routers.neonrunner.rule=Host(`neonrunner.sebastianmorales.sbs`)"
       - "traefik.http.routers.neonrunner.entryPoints=http,https"
       - "traefik.http.routers.neonrunner.tls=true"
+      - "traefik.http.routers.neonrunner.service=neonrunner"
       - "traefik.http.services.neonrunner.loadbalancer.server.port=3000"
     restart: unless-stopped
 
 networks:
   coolify:
     external: true
-  app_net:
-    driver: bridge
-    ipam:
-      config:
-        - subnet: 10.0.5.0/24
